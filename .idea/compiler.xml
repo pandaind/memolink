@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <module name="viewer-app" />
+        <module name="mdgraph-viewer-starter" />
+        <module name="spring-ai-app" />
+        <module name="mdgraph-spring-ai-starter" />
+        <module name="mdgraph-core" />
+        <module name="mdgraph-mcp-server" />
+      </profile>
+    </annotationProcessing>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="mdgraph-core" options="-parameters" />
+      <module name="mdgraph-mcp-server" options="-parameters" />
+      <module name="mdgraph-spring-ai-starter" options="-parameters" />
+      <module name="mdgraph-viewer-starter" options="-parameters" />
+      <module name="spring-ai-app" options="-parameters" />
+      <module name="viewer-app" options="-parameters" />
+    </option>
+  </component>
+</project>

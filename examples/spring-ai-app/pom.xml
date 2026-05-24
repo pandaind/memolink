@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ist.logic</groupId>
+        <artifactId>examples</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>spring-ai-app</artifactId>
+    <name>memolink-example-spring-ai-app</name>
+    <description>
+        Example Spring Boot application that wires the MemoLink Spring AI starter
+        to give an OpenAI-backed ChatClient full access to your Markdown knowledge
+        graph via @Tool methods.
+    </description>
+
+    <dependencies>
+        <!-- Auto-configures KnowledgeGraph + MemoLinkAiTools bean -->
+        <dependency>
+            <groupId>ist.logic</groupId>
+            <artifactId>memolink-spring-ai-starter</artifactId>
+        </dependency>
+
+        <!-- OpenAI ChatClient auto-configuration (requires OPENAI_API_KEY env var) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
+        <!-- REST endpoint for the /chat demo -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

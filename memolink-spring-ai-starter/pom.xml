@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ist.logic</groupId>
+        <artifactId>memolink</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>memolink-spring-ai-starter</artifactId>
+    <name>memolink-spring-ai-starter</name>
+    <description>Spring Boot auto-configuration starter that exposes MemoLink knowledge-graph tools to any Spring AI agent</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>ist.logic</groupId>
+            <artifactId>memolink-core</artifactId>
+        </dependency>
+        <!-- Spring Boot auto-configuration support -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <!-- Spring AI model API (provides @Tool, ToolCallbackProvider, etc.) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-model</artifactId>
+            <version>${spring-ai.version}</version>
+        </dependency>
+        <!-- OpenAI model starter — optional: consumers choose their own model -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <version>${spring-ai.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
