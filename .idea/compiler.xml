@@ -6,9 +6,13 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="viewer-app" />
+        <module name="memolink-mcp-server" />
+        <module name="memolink-viewer-starter" />
         <module name="mdgraph-viewer-starter" />
         <module name="spring-ai-app" />
+        <module name="memolink-core" />
+        <module name="memolink-spring-ai-starter" />
+        <module name="viewer-app" />
         <module name="mdgraph-spring-ai-starter" />
         <module name="mdgraph-core" />
         <module name="mdgraph-mcp-server" />
@@ -21,6 +25,10 @@
       <module name="mdgraph-mcp-server" options="-parameters" />
       <module name="mdgraph-spring-ai-starter" options="-parameters" />
       <module name="mdgraph-viewer-starter" options="-parameters" />
+      <module name="memolink-core" options="-parameters" />
+      <module name="memolink-mcp-server" options="-parameters" />
+      <module name="memolink-spring-ai-starter" options="-parameters" />
+      <module name="memolink-viewer-starter" options="-parameters" />
       <module name="spring-ai-app" options="-parameters" />
       <module name="viewer-app" options="-parameters" />
     </option>

@@ -1,4 +1,4 @@
-/Users/cpanda/Projects/mdgraph/leaflink-viewer-starter/src/main/java/ist/logic/viewer/GraphRegistry.java
-/Users/cpanda/Projects/mdgraph/leaflink-viewer-starter/src/main/java/ist/logic/viewer/LeafLinkViewerAutoConfiguration.java
-/Users/cpanda/Projects/mdgraph/leaflink-viewer-starter/src/main/java/ist/logic/viewer/LeafLinkViewerProperties.java
-/Users/cpanda/Projects/mdgraph/leaflink-viewer-starter/src/main/java/ist/logic/viewer/controller/GraphController.java
+/Users/cpanda/Projects/memolink/memolink-viewer-starter/src/main/java/ist/logic/viewer/GraphRegistry.java
+/Users/cpanda/Projects/memolink/memolink-viewer-starter/src/main/java/ist/logic/viewer/MemoLinkViewerAutoConfiguration.java
+/Users/cpanda/Projects/memolink/memolink-viewer-starter/src/main/java/ist/logic/viewer/MemoLinkViewerProperties.java
+/Users/cpanda/Projects/memolink/memolink-viewer-starter/src/main/java/ist/logic/viewer/controller/GraphController.java
