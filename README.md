@@ -207,7 +207,7 @@ Both examples point at `examples/sample-notes/` which contains five interlinked 
 ## Project Structure
 
 ```
-mdgraph/                            # root project (artifact: memolink)
+memolink/                            # root project (artifact: memolink)
 ├── memolink-core/                  # Pure Java — no Spring dependency
 ├── memolink-viewer-starter/        # Auto-config starter: viewer UI + REST API
 ├── memolink-spring-ai-starter/     # Auto-config starter: Spring AI @Tool methods
