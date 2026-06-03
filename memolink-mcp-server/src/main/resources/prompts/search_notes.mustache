@@ -1,0 +1,12 @@
+Search the knowledge graph for notes about: {{query}}
+
+1. Call search_md_files with query="{{query}}".
+2. For each result with score ≥ 0.5, call get_md_file to read its content.
+3. Call get_related_md_files on the top result to surface connected notes.
+4. Summarise your findings and suggest next notes to explore.
+{{#hasMetadataFields}}
+When reading notes, pay attention to the following frontmatter metadata fields:
+{{#metadataFields}}
+- **{{name}}**: {{description}}
+{{/metadataFields}}
+{{/hasMetadataFields}}

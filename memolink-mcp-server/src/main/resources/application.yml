@@ -1,5 +1,18 @@
 memolink:
   notes-dir: ${MEMOLINK_NOTES_DIR:${user.home}/notes}
+  note:
+    # Path to the Mustache template used when rendering notes to markdown.
+    # Override with file:/path/to/your/note.mustache to customise without rebuilding.
+    template: classpath:templates/note.mustache
+    # Frontmatter fields added to every note header.
+    # "created" / "date" are auto-filled with today's date if present.
+    metadata-fields:
+      - name: created
+        description: "ISO date when the note was first created (auto-set)"
+        required: false
+      - name: source
+        description: "Source URL or reference for the note content"
+        required: false
 
 spring:
   application:

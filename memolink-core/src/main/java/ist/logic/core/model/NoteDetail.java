@@ -27,13 +27,28 @@ public record NoteDetail(
     }
 
     /**
-     * Remove the leading H1 title line and inline tag line so the body
-     * contains only the prose content and Related section.
+     * Remove YAML frontmatter, the leading H1 title line, and the inline tag line
+     * so the body contains only the prose content and Related section.
      */
     private static String stripMarkdownChrome(String content) {
+        var lines = content.lines().toList();
+        int start = 0;
+
+        // Strip YAML frontmatter delimited by --- ... ---
+        if (!lines.isEmpty() && lines.get(0).equals("---")) {
+            for (int i = 1; i < lines.size(); i++) {
+                String l = lines.get(i);
+                if (l.equals("---") || l.equals("...")) {
+                    start = i + 1;
+                    break;
+                }
+            }
+        }
+
         StringBuilder sb = new StringBuilder(content.length());
         boolean pastHeader = false;
-        for (String line : content.lines().toList()) {
+        for (int i = start; i < lines.size(); i++) {
+            String line = lines.get(i);
             if (!pastHeader) {
                 // Skip the first H1 heading
                 if (line.startsWith("# ")) { pastHeader = true; continue; }

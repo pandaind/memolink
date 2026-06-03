@@ -1,0 +1,10 @@
+Delete the note "{{fileId}}" from the knowledge graph.
+
+Steps:
+1. Call get_md_file with file_id="{{fileId}}" to confirm it exists.
+   If the file is not found, stop and inform the user.
+2. Call get_related_md_files with file_id="{{fileId}}" to identify notes that link to it.
+   Warn the user about any dangling wiki-links that will result from the deletion.
+3. Ask for explicit confirmation before proceeding.
+4. Call delete_md_file with file_id="{{fileId}}".
+5. Report the deletion result and list any notes that now have dangling links.

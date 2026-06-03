@@ -1,0 +1,27 @@
+Create a new note titled "{{title}}".
+
+Steps:
+1. Call list_md_files to check whether a note with a similar name already exists.
+   If one does, ask the user whether to update it instead.
+2. Derive a kebab-case file_id from the title (e.g. "Spring Boot" → "spring-boot.md").
+3. Call create_md_file with:
+   - file_id    : the derived kebab-case filename
+   - title      : "{{title}}"
+{{#hasBody}}
+   - body       : {{body}}
+{{/hasBody}}
+{{#hasTags}}
+   - tags       : split "{{tags}}" into a list (no # prefix)
+{{/hasTags}}
+{{#hasLinks}}
+   - wiki_links : split "{{links}}" into a list of file IDs
+{{/hasLinks}}
+{{#hasMetadataFields}}
+   - metadata   : a JSON object containing the following configured frontmatter fields:
+{{#metadataFields}}
+     * {{name}} — {{description}}{{#required}} (required){{/required}}
+{{/metadataFields}}
+     Auto-set "created" (or "date") to today's date if it appears in the list above.
+     Leave optional fields blank unless the user supplied a value.
+{{/hasMetadataFields}}
+4. Report the created file ID and any auto-discovered wiki-links the server added.

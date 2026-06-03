@@ -6,6 +6,7 @@ import ist.logic.core.model.SearchResult;
 import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.MdFileParserService;
+import ist.logic.mcp.template.NoteTemplateService;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -44,13 +46,16 @@ public class MemoLinkMcpTools {
     private final GraphHolder           holder;
     private final GraphTraversalService traversalService;
     private final Path                  notesDir;
+    private final NoteTemplateService   noteTemplateService;
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
-                           Path mdGraphNotesDir) {
-        this.holder           = holder;
-        this.traversalService = traversalService;
-        this.notesDir         = mdGraphNotesDir;
+                           Path mdGraphNotesDir,
+                           NoteTemplateService noteTemplateService) {
+        this.holder               = holder;
+        this.traversalService     = traversalService;
+        this.notesDir             = mdGraphNotesDir;
+        this.noteTemplateService  = noteTemplateService;
     }
 
     @Tool(description = """
@@ -112,6 +117,9 @@ public class MemoLinkMcpTools {
             body      : main markdown content.
             wiki_links: file IDs of related notes to link, e.g. ["spring-boot.md"].
             tags      : tag names WITHOUT the # prefix, e.g. ["java", "spring"].
+            metadata  : optional key-value pairs written into the note frontmatter,
+                        e.g. {"source": "https://..."}. Configured fields are auto-discovered;
+                        "created" / "date" fields are auto-set to today if present in config.
             Returns the normalised file ID on success, or an error if the file already exists.
             Related existing notes are discovered automatically and added to the wiki-links.
             The knowledge graph is rebuilt automatically after the file is saved.
@@ -120,7 +128,8 @@ public class MemoLinkMcpTools {
                                  String title,
                                  String body,
                                  List<String> wiki_links,
-                                 List<String> tags) {
+                                 List<String> tags,
+                                 Map<String, String> metadata) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = notesDir.resolve(normalizedId);
         if (Files.exists(target)) {
@@ -129,7 +138,7 @@ public class MemoLinkMcpTools {
         try {
             List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wiki_links);
             Files.createDirectories(notesDir);
-            Files.writeString(target, buildMarkdown(title, body, allLinks, tags),
+            Files.writeString(target, noteTemplateService.render(title, body, tags, allLinks, metadata),
                     StandardOpenOption.CREATE_NEW);
             String autoLinked = allLinks.stream()
                     .filter(l -> wiki_links == null || !wiki_links.contains(l))
@@ -149,6 +158,8 @@ public class MemoLinkMcpTools {
             body      : new main markdown content.
             wiki_links: complete new list of wiki-link targets.
             tags      : complete new list of tags (no # prefix).
+            metadata  : key-value pairs for the note frontmatter. Pass existing values
+                        from the current note to preserve them; omit a key to drop it.
             Returns the file ID on success, or an error if the file does not exist.
             The knowledge graph is rebuilt automatically after the file is saved.
             """)
@@ -156,14 +167,15 @@ public class MemoLinkMcpTools {
                                  String title,
                                  String body,
                                  List<String> wiki_links,
-                                 List<String> tags) {
+                                 List<String> tags,
+                                 Map<String, String> metadata) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = notesDir.resolve(normalizedId);
         if (!Files.exists(target)) {
             return "File not found: " + normalizedId + ". Use create_md_file to create it.";
         }
         try {
-            Files.writeString(target, buildMarkdown(title, body, wiki_links, tags),
+            Files.writeString(target, noteTemplateService.render(title, body, tags, wiki_links, metadata),
                     StandardOpenOption.TRUNCATE_EXISTING);
             return "Updated: " + normalizedId;
         } catch (IOException e) {
@@ -220,27 +232,5 @@ public class MemoLinkMcpTools {
         return new ArrayList<>(merged);
     }
 
-    private String buildMarkdown(String title, String body,
-                                 List<String> wikiLinks, List<String> tags) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("# ").append(title == null ? "Untitled" : title.trim()).append("\n");
-        if (tags != null && !tags.isEmpty()) {
-            sb.append("\n");
-            String tagLine = tags.stream()
-                    .map(t -> "#" + t.trim().toLowerCase().replaceAll("[^a-z0-9_-]", "-"))
-                    .collect(Collectors.joining(" "));
-            sb.append(tagLine).append("\n");
-        }
-        if (body != null && !body.isBlank()) {
-            sb.append("\n").append(body.trim()).append("\n");
-        }
-        if (wikiLinks != null && !wikiLinks.isEmpty()) {
-            sb.append("\n## Related\n\n");
-            for (String link : wikiLinks) {
-                String ref = link.endsWith(".md") ? link.substring(0, link.length() - 3) : link;
-                sb.append("- [[").append(ref).append("]]\n");
-            }
-        }
-        return sb.toString();
-    }
 }
+

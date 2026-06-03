@@ -7,6 +7,7 @@ import ist.logic.core.service.GraphSearchService;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.GraphWatchService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 @Configuration
+@EnableConfigurationProperties(NoteTemplateProperties.class)
 public class MemoLinkMcpConfig {
 
     @Value("${memolink.notes-dir:${user.home}/notes}")

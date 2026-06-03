@@ -1,0 +1,23 @@
+{{#hasFrontmatter}}
+---
+{{#frontmatterEntries}}
+{{name}}: {{value}}
+{{/frontmatterEntries}}
+---
+{{/hasFrontmatter}}
+# {{title}}
+{{#hasTags}}
+{{tagsLine}}
+{{/hasTags}}
+{{#hasBody}}
+
+{{body}}
+{{/hasBody}}
+{{#hasLinks}}
+
+## Related
+
+{{#links}}
+- [[{{ref}}]]
+{{/links}}
+{{/hasLinks}}

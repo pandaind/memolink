@@ -1,0 +1,16 @@
+Update the note "{{fileId}}".
+
+Steps:
+1. Call get_md_file with file_id="{{fileId}}" to read the current content.
+   If the file is not found, call list_md_files and suggest the closest match.
+2. Apply the following changes: {{#hasInstructions}}{{instructions}}{{/hasInstructions}}{{^hasInstructions}}(edit as the user requests){{/hasInstructions}}
+3. Preserve all existing tags, wiki-links and section headings unless the change
+   explicitly requires removing them.
+{{#hasMetadataFields}}
+   Also preserve existing frontmatter fields. If any configured field is missing, add it:
+{{#metadataFields}}
+   - {{name}}: {{description}}{{#required}} (required){{/required}}
+{{/metadataFields}}
+{{/hasMetadataFields}}
+4. Call update_md_file with the complete updated title, body, wiki_links, tags{{#hasMetadataFields}}, and metadata{{/hasMetadataFields}}.
+5. Confirm the file ID that was saved.

@@ -1,0 +1,8 @@
+Use the list_md_files tool to retrieve every note ID in the knowledge graph.
+Then group the IDs by apparent topic and present a concise summary so the user can decide what to read next.
+{{#hasMetadataFields}}
+Notes in this graph may include the following frontmatter metadata fields:
+{{#metadataFields}}
+- **{{name}}**: {{description}}{{#required}} *(required)*{{/required}}
+{{/metadataFields}}
+{{/hasMetadataFields}}
