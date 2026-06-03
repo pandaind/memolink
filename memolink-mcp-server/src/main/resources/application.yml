@@ -20,6 +20,9 @@ spring:
   main:
     # MCP stdio server must not start a web server
     web-application-type: none
+    # Banner and stdout logging must be off — MCP uses stdout for JSON-RPC
+    banner-mode: off
+    log-startup-info: false
   ai:
     mcp:
       server:
@@ -32,7 +35,5 @@ spring:
 
 logging:
   level:
-    ist.logic: INFO
-  # Suppress all console output on startup so stdio stays clean for MCP
-  pattern:
-    console: ""
+    root: OFF
+    ist.logic: OFF

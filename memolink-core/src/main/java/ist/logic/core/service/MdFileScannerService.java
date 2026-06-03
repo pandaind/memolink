@@ -11,6 +11,9 @@ import java.util.List;
 public class MdFileScannerService {
 
     public List<Path> scan(Path rootDir) throws IOException {
+        if (!Files.exists(rootDir)) {
+            Files.createDirectories(rootDir);
+        }
         if (!Files.isDirectory(rootDir)) {
             throw new IllegalArgumentException("Not a directory: " + rootDir);
         }
