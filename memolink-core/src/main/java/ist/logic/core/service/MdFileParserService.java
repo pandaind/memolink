@@ -65,7 +65,8 @@ public class MdFileParserService {
 
         Node document = parser.parse(content);
 
-        Set<String> wikiLinks = new LinkedHashSet<>();
+        Set<String> wikiLinks       = new LinkedHashSet<>();
+        Map<String, String> wikiLinkTypes = new LinkedHashMap<>();
         Set<String> headings  = new LinkedHashSet<>();
 
         NodeVisitor visitor = new NodeVisitor(
@@ -73,7 +74,15 @@ public class MdFileParserService {
                 // getPageRef() returns only the page reference, excluding display text after |
                 String pageRef = node.getPageRef().toString().trim();
                 if (!pageRef.isEmpty()) {
-                    wikiLinks.add(normalizeMdFileId(pageRef));
+                    String normalizedId = normalizeMdFileId(pageRef);
+                    wikiLinks.add(normalizedId);
+                    // Extract optional relationship type from the link text: [[target|type]]
+                    String linkText = node.getText().toString().trim();
+                    if (!linkText.isEmpty() && !linkText.equals(pageRef)) {
+                        // link text differs from page ref → treat as relation type
+                        String relType = linkText.toLowerCase().replaceAll("[^a-z0-9_]", "_");
+                        wikiLinkTypes.put(normalizedId, relType);
+                    }
                 }
             }),
             new VisitHandler<>(Heading.class, node -> {
@@ -88,17 +97,29 @@ public class MdFileParserService {
         Set<String> tags     = extractTags(content);
         Set<String> keywords = extractKeywords(content);
 
-        return new MdFileMetadata(fileName, title, content, filePath,
-                wikiLinks, tags, keywords, headings);
+        MdFileMetadata meta = new MdFileMetadata(fileName, title, content, filePath,
+                wikiLinks, wikiLinkTypes, tags, keywords, headings);
+
+        // Read importance from YAML frontmatter if present
+        int importance = parseFrontmatterInt(content, "importance");
+        if (importance > 0) meta.setImportance(importance);
+
+        return meta;
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
     private String deriveTitle(String fileName, String content) {
-        for (String line : content.lines().limit(15).toList()) {
-            if (line.startsWith("# ")) {
-                return line.substring(2).trim();
+        // Skip frontmatter before looking for H1
+        boolean inFrontmatter = false;
+        boolean frontmatterDone = false;
+        for (String line : content.lines().limit(25).toList()) {
+            if (!frontmatterDone && line.equals("---")) {
+                if (!inFrontmatter) { inFrontmatter = true; continue; }
+                else { frontmatterDone = true; continue; }
             }
+            if (inFrontmatter && !frontmatterDone) continue;
+            if (line.startsWith("# ")) return line.substring(2).trim();
         }
         return fileName.endsWith(".md")
                 ? fileName.substring(0, fileName.length() - 3)
@@ -154,5 +175,25 @@ public class MdFileParserService {
             normalized = normalized + ".md";
         }
         return normalized;
+    }
+
+    /**
+     * Reads an integer value from a YAML frontmatter field.
+     * e.g. {@code importance: 8} → 8. Returns 0 if not found or unparseable.
+     */
+    private static int parseFrontmatterInt(String content, String fieldName) {
+        boolean inFrontmatter = false;
+        for (String line : content.lines().limit(30).toList()) {
+            if (line.equals("---")) {
+                if (!inFrontmatter) { inFrontmatter = true; continue; }
+                else break;
+            }
+            if (!inFrontmatter) continue;
+            if (line.startsWith(fieldName + ":")) {
+                String val = line.substring(fieldName.length() + 1).trim();
+                try { return Integer.parseInt(val); } catch (NumberFormatException ignored) {}
+            }
+        }
+        return 0;
     }
 }

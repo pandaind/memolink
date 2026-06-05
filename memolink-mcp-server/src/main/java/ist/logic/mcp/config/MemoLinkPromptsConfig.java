@@ -31,9 +31,13 @@ public class MemoLinkPromptsConfig {
         return List.of(
                 listNotesPrompt(),
                 searchNotesPrompt(),
+                semanticSearchPrompt(),
                 createNotePrompt(),
                 updateNotePrompt(),
-                deleteNotePrompt()
+                deleteNotePrompt(),
+                findPathPrompt(),
+                generateReflectionPrompt(),
+                memoryOverviewPrompt()
         );
     }
 
@@ -170,6 +174,104 @@ public class MemoLinkPromptsConfig {
                     ))
             );
         });
+    }
+
+    // ── semantic_search ───────────────────────────────────────────────────────
+
+    private McpServerFeatures.SyncPromptSpecification semanticSearchPrompt() {
+        var prompt = new McpSchema.Prompt(
+                "semantic_search",
+                "Search notes by concept using vector embeddings — finds related content without exact keyword matches",
+                List.of(new McpSchema.PromptArgument("query",
+                        "Concept or natural language description to search for", true))
+        );
+        return new McpServerFeatures.SyncPromptSpecification(prompt, (exchange, req) -> {
+            String query = arg(req.arguments(), "query");
+            return new McpSchema.GetPromptResult(
+                    "Semantic search: " + query,
+                    List.of(new McpSchema.PromptMessage(
+                            McpSchema.Role.USER,
+                            new McpSchema.TextContent(render("semantic_search", Map.of("query", query)))
+                    ))
+            );
+        });
+    }
+
+    // ── find_path ─────────────────────────────────────────────────────────────
+
+    private McpServerFeatures.SyncPromptSpecification findPathPrompt() {
+        var prompt = new McpSchema.Prompt(
+                "find_path",
+                "Find the connection path between two notes in the knowledge graph",
+                List.of(
+                        new McpSchema.PromptArgument("from_id",
+                                "Starting note file ID, e.g. spring-ai.md", true),
+                        new McpSchema.PromptArgument("to_id",
+                                "Target note file ID, e.g. kafka.md", true)
+                )
+        );
+        return new McpServerFeatures.SyncPromptSpecification(prompt, (exchange, req) -> {
+            var args = req.arguments();
+            String fromId = arg(args, "from_id");
+            String toId   = arg(args, "to_id");
+            var ctx = Map.<String, Object>of("fromId", fromId, "toId", toId);
+            return new McpSchema.GetPromptResult(
+                    "Find path: " + fromId + " → " + toId,
+                    List.of(new McpSchema.PromptMessage(
+                            McpSchema.Role.USER,
+                            new McpSchema.TextContent(render("find_path", ctx))
+                    ))
+            );
+        });
+    }
+
+    // ── generate_reflection ───────────────────────────────────────────────────
+
+    private McpServerFeatures.SyncPromptSpecification generateReflectionPrompt() {
+        var prompt = new McpSchema.Prompt(
+                "generate_reflection",
+                "Gather notes on a topic and synthesise a reflection/summary node",
+                List.of(
+                        new McpSchema.PromptArgument("topic",
+                                "Topic to summarise, e.g. \"Spring AI\"", true),
+                        new McpSchema.PromptArgument("max_sources",
+                                "Max source notes to include (default 5)", false)
+                )
+        );
+        return new McpServerFeatures.SyncPromptSpecification(prompt, (exchange, req) -> {
+            var args = req.arguments();
+            String topic      = arg(args, "topic");
+            String maxSources = arg(args, "max_sources");
+            var ctx = new java.util.HashMap<String, Object>();
+            ctx.put("topic", topic);
+            if (!maxSources.isBlank()) ctx.put("maxSources", maxSources);
+            return new McpSchema.GetPromptResult(
+                    "Generate reflection: " + topic,
+                    List.of(new McpSchema.PromptMessage(
+                            McpSchema.Role.USER,
+                            new McpSchema.TextContent(render("generate_reflection", ctx))
+                    ))
+            );
+        });
+    }
+
+    // ── memory_overview ───────────────────────────────────────────────────────
+
+    private McpServerFeatures.SyncPromptSpecification memoryOverviewPrompt() {
+        var prompt = new McpSchema.Prompt(
+                "memory_overview",
+                "Get a full overview of the knowledge graph: stats, top topics, hub notes, and priorities",
+                List.of()
+        );
+        return new McpServerFeatures.SyncPromptSpecification(prompt, (exchange, req) ->
+                new McpSchema.GetPromptResult(
+                        "Knowledge graph overview",
+                        List.of(new McpSchema.PromptMessage(
+                                McpSchema.Role.USER,
+                                new McpSchema.TextContent(render("memory_overview", Map.of()))
+                        ))
+                )
+        );
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

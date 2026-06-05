@@ -1,0 +1,17 @@
+Search the knowledge graph semantically for: {{query}}
+
+This uses vector embeddings — it finds conceptually related notes even without exact keyword matches.
+
+Steps:
+1. Call semantic_search with query="{{query}}" for embedding-based results.
+2. Also call search_md_files with query="{{query}}" for keyword-based results.
+3. Merge the two result sets, preferring notes that appear in both.
+4. For the top 3 results, call get_graph_context to retrieve each note's
+   content AND its 1-hop neighbours with relationship types.
+5. Summarise the findings, highlighting how the notes relate to each other.
+{{#hasMetadataFields}}
+When reading notes, pay attention to the following frontmatter metadata fields:
+{{#metadataFields}}
+- **{{name}}**: {{description}}
+{{/metadataFields}}
+{{/hasMetadataFields}}

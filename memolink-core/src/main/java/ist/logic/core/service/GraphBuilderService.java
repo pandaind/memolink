@@ -32,6 +32,10 @@ public class GraphBuilderService {
     private final RelationshipEngine   engine  = new RelationshipEngine();
 
     public KnowledgeGraph build(Path rootDir) throws IOException {
+        return build(rootDir, null);
+    }
+
+    public KnowledgeGraph build(Path rootDir, EmbeddingService embeddingService) throws IOException {
         log.info("Scanning md files in: {}", rootDir.toAbsolutePath());
         List<Path> paths = scanner.scan(rootDir);
         log.info("Found {} md files", paths.size());
@@ -45,25 +49,20 @@ public class GraphBuilderService {
             }
         }
 
+        embedAll(files, embeddingService);
+
         List<GraphEdge> edges = engine.buildEdges(files);
         log.info("Built graph: {} nodes, {} edges", files.size(), edges.size());
 
         return new KnowledgeGraph(files, edges);
     }
 
-    /**
-     * Rebuild the graph by re-parsing only {@code changedPaths}.
-     *
-     * <ul>
-     *   <li>If a changed path still exists on disk → re-parse and replace.</li>
-     *   <li>If it no longer exists (deleted) → remove from the graph.</li>
-     *   <li>All other notes are carried over from {@code current} as-is.</li>
-     * </ul>
-     *
-     * Edge scoring is re-run over the full (updated) file list because any
-     * change can affect relationships between other notes.
-     */
     public KnowledgeGraph buildIncremental(KnowledgeGraph current, Set<Path> changedPaths) throws IOException {
+        return buildIncremental(current, changedPaths, null);
+    }
+
+    public KnowledgeGraph buildIncremental(KnowledgeGraph current, Set<Path> changedPaths,
+                                           EmbeddingService embeddingService) throws IOException {
         // Seed from current graph, keyed by file ID
         Map<String, MdFileMetadata> fileMap = new LinkedHashMap<>();
         for (MdFileMetadata m : current.getAllMdFiles()) {
@@ -85,10 +84,32 @@ public class GraphBuilderService {
         }
 
         List<MdFileMetadata> files = new ArrayList<>(fileMap.values());
+        // Only embed newly-changed files (carry existing embeddings forward)
+        List<MdFileMetadata> needsEmbed = changedPaths.stream()
+                .map(p -> p.getFileName().toString())
+                .map(fileMap::get)
+                .filter(m -> m != null && !m.hasEmbedding())
+                .toList();
+        embedAll(needsEmbed, embeddingService);
+
         List<GraphEdge> edges = engine.buildEdges(files);
         log.info("Incremental rebuild: {} nodes, {} edges ({} file(s) changed)",
                  files.size(), edges.size(), changedPaths.size());
 
         return new KnowledgeGraph(files, edges);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private void embedAll(List<MdFileMetadata> files, EmbeddingService embeddingService) {
+        if (embeddingService == null || !embeddingService.isAvailable()) return;
+        int count = 0;
+        for (MdFileMetadata m : files) {
+            if (!m.hasEmbedding()) {
+                float[] emb = embeddingService.embedNote(m.getTitle(), m.getContent());
+                if (emb != null) { m.setEmbedding(emb); count++; }
+            }
+        }
+        if (count > 0) log.info("Computed {} embeddings", count);
     }
 }

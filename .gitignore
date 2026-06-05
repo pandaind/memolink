@@ -2,3 +2,5 @@
 .idea/
 .vscode/
 /**/target/
+# Large ONNX model files — downloaded at build time, not committed
+**/resources/models/**/*.onnx

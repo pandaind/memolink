@@ -1,0 +1,22 @@
+Gather source notes about "{{topic}}" and synthesise a reflection/summary node.
+
+Steps:
+1. Call gather_reflection_sources with topic="{{topic}}" and max_sources={{#maxSources}}{{maxSources}}{{/maxSources}}{{^maxSources}}5{{/maxSources}}.
+2. Read the returned source excerpts carefully.
+3. Call create_md_file with:
+   - file_id    : "{{topic}}-reflection.md" (normalised to kebab-case)
+   - title      : "{{topic}} — Summary"
+   - body       : A synthesised prose summary covering:
+     * Core concepts shared across the source notes
+     * Key relationships and patterns
+     * Gaps or open questions
+   - tags       : ["reflection", "summary"] plus any topic-specific tags
+   - wiki_links : all source note IDs returned by step 1
+   - metadata   : {"importance": "7"}
+4. Confirm the created reflection note ID.
+{{#hasMetadataFields}}
+Apply these additional metadata fields if relevant:
+{{#metadataFields}}
+- **{{name}}**: {{description}}
+{{/metadataFields}}
+{{/hasMetadataFields}}

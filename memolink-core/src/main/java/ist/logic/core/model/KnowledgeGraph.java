@@ -38,7 +38,7 @@ public class KnowledgeGraph {
         for (GraphEdge edge : edges) {
             adjacency.computeIfAbsent(edge.source(), k -> new ArrayList<>()).add(edge);
             adjacency.computeIfAbsent(edge.target(), k -> new ArrayList<>()).add(
-                new GraphEdge(edge.target(), edge.source(), edge.weight(), edge.reasons()));
+                new GraphEdge(edge.target(), edge.source(), edge.weight(), edge.reasons(), edge.relationType()));
         }
     }
 

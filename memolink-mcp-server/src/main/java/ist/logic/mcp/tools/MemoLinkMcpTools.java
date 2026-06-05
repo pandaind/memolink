@@ -1,8 +1,10 @@
 package ist.logic.mcp.tools;
 
+import ist.logic.core.model.GraphContextResult;
 import ist.logic.core.model.MdFileMetadata;
 import ist.logic.core.model.NoteDetail;
 import ist.logic.core.model.SearchResult;
+import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.MdFileParserService;
@@ -15,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,25 +50,31 @@ public class MemoLinkMcpTools {
     private final GraphTraversalService traversalService;
     private final Path                  notesDir;
     private final NoteTemplateService   noteTemplateService;
+    private final EmbeddingService      embeddingService;
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
                            Path mdGraphNotesDir,
-                           NoteTemplateService noteTemplateService) {
+                           NoteTemplateService noteTemplateService,
+                           EmbeddingService embeddingService) {
         this.holder               = holder;
         this.traversalService     = traversalService;
         this.notesDir             = mdGraphNotesDir;
         this.noteTemplateService  = noteTemplateService;
+        this.embeddingService     = embeddingService;
     }
 
     @Tool(description = """
-            Search md files by query text.
+            Search md files by query text using hybrid BM25 + semantic search.
             Returns ranked results with id, title, and relevance score.
             Higher score means more relevant. Prefer top results; skip score < 0.5.
+            When the embedding model is available, results match conceptually related
+            content even without exact keyword overlap.
             """)
     public List<SearchResult> search_md_files(String query) {
         try {
-            return holder.getSearchService().searchWithScores(query, 10);
+            return holder.getSearchService().hybridSearch(
+                    query, embeddingService, 10, holder.getGraph()::getMdFile);
         } catch (IOException e) {
             return List.of();
         }
@@ -86,6 +95,7 @@ public class MemoLinkMcpTools {
     public NoteDetail get_md_file(String file_id) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
         if (mdFile == null) return null;
+        mdFile.recordAccess();   // Capability 5: metadata ranking
         return NoteDetail.from(mdFile);
     }
 
@@ -108,6 +118,49 @@ public class MemoLinkMcpTools {
                 .map(MdFileMetadata::getId)
                 .sorted()
                 .toList();
+    }
+
+    @Tool(description = """
+            Pure semantic (vector) search using sentence embeddings.
+            Use this when keyword search returns poor results or when you need
+            conceptually related content without exact keyword matches.
+            Requires the embedding model to be available; returns empty list otherwise.
+            Returns ranked results with id, title, and cosine similarity score.
+            """)
+    public List<SearchResult> semantic_search(String query) {
+        if (!embeddingService.isAvailable()) return List.of();
+        float[] qEmb = embeddingService.embed(query);
+        if (qEmb == null) return List.of();
+        try {
+            return holder.getSearchService().semanticSearch(qEmb, 10);
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    @Tool(description = """
+            Get a note's full content together with its 1-hop graph neighbours
+            and the typed relationship to each (e.g. uses, integrates_with, references).
+            This gives GraphRAG-style context: the matched note PLUS its immediate
+            knowledge neighbourhood in one call.
+            file_id : the note to expand, e.g. "spring-ai.md".
+            """)
+    public GraphContextResult get_graph_context(String file_id) {
+        MdFileMetadata m = holder.getGraph().getMdFile(file_id);
+        if (m != null) m.recordAccess();
+        return traversalService.buildContext(holder.getGraph(), file_id);
+    }
+
+    @Tool(description = """
+            Find the shortest path in the knowledge graph between two notes.
+            Returns the ordered list of note IDs on the path, inclusive of
+            from_id and to_id. Returns an empty list if no path exists.
+            Useful for understanding how two topics are connected.
+            from_id : starting note, e.g. "spring-ai.md".
+            to_id   : target note, e.g. "kafka.md".
+            """)
+    public List<String> find_path_between_notes(String from_id, String to_id) {
+        return traversalService.findPath(holder.getGraph(), from_id, to_id);
     }
 
     @Tool(description = """
@@ -203,6 +256,118 @@ public class MemoLinkMcpTools {
         }
     }
 
+    @Tool(description = """
+            Set the importance of a note (0–10). Higher importance boosts the note
+            in search rankings and signals it should be prioritised by agents.
+            The value is written into the note's frontmatter as "importance: N"
+            so it persists across server restarts.
+            file_id    : the note to update, e.g. "spring-ai.md".
+            importance : integer 0–10 (0 = unset, 10 = most important).
+            """)
+    public String set_note_importance(String file_id, int importance) {
+        String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
+        MdFileMetadata m = holder.getGraph().getMdFile(normalizedId);
+        if (m == null) return "File not found: " + normalizedId;
+        int clamped = Math.max(0, Math.min(10, importance));
+        m.setImportance(clamped);
+        // Persist into frontmatter by re-reading + updating the file
+        Path target = notesDir.resolve(normalizedId);
+        try {
+            String content = Files.readString(target);
+            String updated = setFrontmatterField(content, "importance", String.valueOf(clamped));
+            Files.writeString(target, updated, StandardOpenOption.TRUNCATE_EXISTING);
+            return "Importance set to " + clamped + " for: " + normalizedId;
+        } catch (IOException e) {
+            return "Importance updated in memory but could not persist: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = """
+            Returns a summary of the knowledge graph: total note count, top tags,
+            most-connected notes, notes by importance, and embedding availability.
+            Use this to orient yourself before searching or editing.
+            """)
+    public Map<String, Object> get_memory_summary() {
+        var graph = holder.getGraph();
+        var allNotes = graph.getAllMdFiles();
+
+        // Top tags
+        Map<String, Long> tagCounts = new java.util.TreeMap<>();
+        allNotes.forEach(n -> n.getTags().forEach(t ->
+                tagCounts.merge(t, 1L, Long::sum)));
+        List<Map<String, Object>> topTags = tagCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(10)
+                .map(e -> Map.<String, Object>of("tag", e.getKey(), "count", e.getValue()))
+                .toList();
+
+        // Most connected notes
+        List<Map<String, Object>> mostConnected = allNotes.stream()
+                .map(n -> Map.<String, Object>of(
+                        "id", n.getId(),
+                        "title", n.getTitle(),
+                        "connections", graph.getNeighborEdges(n.getId()).size()))
+                .sorted(Comparator.<Map<String, Object>, Integer>comparing(
+                        m -> (Integer) m.get("connections")).reversed())
+                .limit(10)
+                .toList();
+
+        // Notes by importance
+        List<Map<String, Object>> byImportance = allNotes.stream()
+                .filter(n -> n.getImportance() > 0)
+                .sorted(Comparator.comparingInt(MdFileMetadata::getImportance).reversed())
+                .map(n -> Map.<String, Object>of(
+                        "id", n.getId(), "title", n.getTitle(), "importance", n.getImportance()))
+                .toList();
+
+        return Map.of(
+                "totalNotes",       allNotes.size(),
+                "topTags",          topTags,
+                "mostConnected",    mostConnected,
+                "byImportance",     byImportance,
+                "semanticEnabled",  embeddingService.isAvailable()
+        );
+    }
+
+    @Tool(description = """
+            Gather all notes related to a topic to prepare a reflection/summary node.
+            Returns the topic, list of related note IDs, and their key content excerpts
+            so the model can synthesise a summary note using create_md_file.
+            topic       : the topic to summarise, e.g. "Spring AI".
+            max_sources : maximum number of source notes to include (default 5).
+            """)
+    public Map<String, Object> gather_reflection_sources(String topic, int max_sources) {
+        int limit = max_sources > 0 ? Math.min(max_sources, 10) : 5;
+        List<SearchResult> hits;
+        try {
+            hits = holder.getSearchService().hybridSearch(
+                    topic, embeddingService, limit, holder.getGraph()::getMdFile);
+        } catch (IOException e) {
+            hits = List.of();
+        }
+
+        List<Map<String, Object>> sources = hits.stream()
+                .map(r -> {
+                    MdFileMetadata m = holder.getGraph().getMdFile(r.id());
+                    String excerpt = m == null ? "" :
+                            m.getContent().substring(0, Math.min(m.getContent().length(), 600));
+                    return Map.<String, Object>of(
+                            "id",      r.id(),
+                            "title",   r.title(),
+                            "score",   r.score(),
+                            "excerpt", excerpt
+                    );
+                })
+                .toList();
+
+        return Map.of(
+                "topic",           topic,
+                "sources",         sources,
+                "instruction",     "Use create_md_file to write a reflection note that synthesises " +
+                                   "these sources. Tag it with #reflection and link to each source."
+        );
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**
@@ -230,6 +395,30 @@ public class MemoLinkMcpTools {
         if (explicit != null) merged.addAll(explicit);
         merged.addAll(discovered);
         return new ArrayList<>(merged);
+    }
+
+    /**
+     * Inserts or replaces a YAML frontmatter scalar field.
+     * If the file has no frontmatter, a new frontmatter block is prepended.
+     */
+    private static String setFrontmatterField(String content, String field, String value) {
+        String fieldLine = field + ": " + value;
+        // Has frontmatter?
+        if (content.startsWith("---\n") || content.startsWith("---\r\n")) {
+            int end = content.indexOf("\n---", 3);
+            if (end != -1) {
+                String fm = content.substring(0, end);
+                String rest = content.substring(end);
+                if (fm.contains("\n" + field + ":")) {
+                    fm = fm.replaceAll("(?m)^" + field + ":.*$", fieldLine);
+                } else {
+                    fm = fm + "\n" + fieldLine;
+                }
+                return fm + rest;
+            }
+        }
+        // No frontmatter — prepend one
+        return "---\n" + fieldLine + "\n---\n" + content;
     }
 
 }

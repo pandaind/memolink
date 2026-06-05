@@ -29,6 +29,7 @@
         <spring-ai.version>1.0.0</spring-ai.version>
         <flexmark.version>0.64.8</flexmark.version>
         <lucene.version>9.12.0</lucene.version>
+        <djl.version>0.31.0</djl.version>
     </properties>
 
     <dependencyManagement>
@@ -94,6 +95,23 @@
                 <groupId>org.apache.lucene</groupId>
                 <artifactId>lucene-analysis-common</artifactId>
                 <version>${lucene.version}</version>
+            </dependency>
+
+            <!-- DJL — sentence embeddings via ONNX Runtime -->
+            <dependency>
+                <groupId>ai.djl</groupId>
+                <artifactId>api</artifactId>
+                <version>${djl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ai.djl.huggingface</groupId>
+                <artifactId>tokenizers</artifactId>
+                <version>${djl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ai.djl.onnxruntime</groupId>
+                <artifactId>onnxruntime-engine</artifactId>
+                <version>${djl.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
