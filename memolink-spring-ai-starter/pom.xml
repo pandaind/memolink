@@ -31,13 +31,7 @@
             <artifactId>spring-ai-model</artifactId>
             <version>${spring-ai.version}</version>
         </dependency>
-        <!-- OpenAI model starter — optional: consumers choose their own model -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-openai</artifactId>
-            <version>${spring-ai.version}</version>
-            <optional>true</optional>
-        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>

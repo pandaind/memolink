@@ -35,10 +35,6 @@
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-queryparser</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.apache.lucene</groupId>
-            <artifactId>lucene-analysis-common</artifactId>
-        </dependency>
 
         <!-- JSON export -->
         <dependency>
@@ -52,19 +48,6 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
-        <!-- DJL sentence embeddings (ONNX Runtime engine + HuggingFace tokenizer) -->
-        <dependency>
-            <groupId>ai.djl</groupId>
-            <artifactId>api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.huggingface</groupId>
-            <artifactId>tokenizers</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.onnxruntime</groupId>
-            <artifactId>onnxruntime-engine</artifactId>
-        </dependency>
         <!-- Direct OnnxRuntime Java API — used by EmbeddingService to bypass
              DJL's SPI engine system (which is broken in Spring Boot fat jars) -->
         <dependency>
