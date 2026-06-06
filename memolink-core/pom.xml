@@ -65,6 +65,12 @@
             <groupId>ai.djl.onnxruntime</groupId>
             <artifactId>onnxruntime-engine</artifactId>
         </dependency>
+        <!-- Direct OnnxRuntime Java API — used by EmbeddingService to bypass
+             DJL's SPI engine system (which is broken in Spring Boot fat jars) -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+        </dependency>
 
         <!-- Test -->
         <dependency>

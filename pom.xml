@@ -30,6 +30,7 @@
         <flexmark.version>0.64.8</flexmark.version>
         <lucene.version>9.12.0</lucene.version>
         <djl.version>0.31.0</djl.version>
+        <onnxruntime.version>1.19.0</onnxruntime.version>
     </properties>
 
     <dependencyManagement>
@@ -112,6 +113,11 @@
                 <groupId>ai.djl.onnxruntime</groupId>
                 <artifactId>onnxruntime-engine</artifactId>
                 <version>${djl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.onnxruntime</groupId>
+                <artifactId>onnxruntime</artifactId>
+                <version>${onnxruntime.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

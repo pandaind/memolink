@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MemoLink MCP Server — HTTP/SSE profile
+#
+# Activate with:  --spring.profiles.active=http
+# or env var:     SPRING_PROFILES_ACTIVE=http
+#
+# VS Code mcp.json for this mode:
+#   {
+#     "memolink-http": {
+#       "type": "sse",
+#       "url": "http://localhost:8765/mcp/sse",
+#       "headers": { "X-API-Key": "sk-vscode-changeme" }
+#     }
+#   }
+# ─────────────────────────────────────────────────────────────────────────────
+spring:
+  main:
+    web-application-type: servlet   # switch ON the web server
+    banner-mode: off
+
+  ai:
+    mcp:
+      server:
+        type: SYNC                  # Spring AI WebMVC uses SYNC over HTTP
+
+server:
+  port: ${MEMOLINK_HTTP_PORT:8765}
+
+# ── Authentication ────────────────────────────────────────────────────────────
+memolink:
+  auth:
+    enabled: true
+    clients:
+      # READ+WRITE: VS Code / Cursor agents that can create and update notes
+      - name: vscode
+        key: ${MEMOLINK_KEY_VSCODE:sk-vscode-changeme}
+        roles: [READ, WRITE]
+
+      # READ only: Claude Desktop, read-only browsing agents
+      - name: claude-desktop
+        key: ${MEMOLINK_KEY_CLAUDE:sk-claude-changeme}
+        roles: [READ]
+
+      # READ only: CI / automation that should never mutate notes
+      - name: ci-bot
+        key: ${MEMOLINK_KEY_CI:sk-ci-changeme}
+        roles: [READ]
+
+logging:
+  level:
+    ist.logic: INFO
+    org.springframework.security: WARN
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %logger{36} - %msg%n"

@@ -13,6 +13,12 @@ memolink:
       - name: source
         description: "Source URL or reference for the note content"
         required: false
+  # ── Authentication (HTTP/SSE mode only) ──────────────────────────────────
+  # auth.enabled is false by default (stdio mode — OS process trust model).
+  # Enable via the 'http' Spring profile: --spring.profiles.active=http
+  # See application-http.yml for full HTTP + auth configuration.
+  auth:
+    enabled: false
 
 spring:
   application:

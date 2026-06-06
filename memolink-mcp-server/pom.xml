@@ -20,7 +20,7 @@
             <groupId>ist.logic</groupId>
             <artifactId>memolink-core</artifactId>
         </dependency>
-        <!-- Spring AI MCP server (stdio transport — for Claude Desktop etc.) -->
+        <!-- Spring AI MCP server (stdio transport) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-server</artifactId>
@@ -36,6 +36,20 @@
             <groupId>com.samskivert</groupId>
             <artifactId>jmustache</artifactId>
         </dependency>
+        <!-- Spring Security + web: needed at compile time for the HTTP/SSE security
+             classes (MemoLinkSecurityConfig, ApiKeyAuthFilter).  Both are guarded
+             by @ConditionalOnWebApplication so they activate only in 'http' profile
+             runtime; marking optional keeps them out of downstream transitive deps. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -43,11 +57,55 @@
         </dependency>
     </dependencies>
 
+    <!-- HTTP/SSE mode: mvn package -Phttp  OR  activate profile in mcp.json -->
+    <profiles>
+        <profile>
+            <id>http</id>
+            <dependencies>
+                <!-- MCP over HTTP/SSE -->
+                <dependency>
+                    <groupId>org.springframework.ai</groupId>
+                    <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+                    <version>${spring-ai.version}</version>
+                </dependency>
+                <!-- Spring Security for API key authentication -->
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-security</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+
     <build>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <!-- DJL uses ServiceLoader (SPI) to discover EngineProviders.
+                     Spring Boot's nested-jar classloader blocks SPI from nested
+                     jars, so we unpack the DJL engine jars to a temp dir at
+                     launch time so ServiceLoader can find them normally. -->
+                <configuration>
+                    <requiresUnpack>
+                        <dependency>
+                            <groupId>ai.djl.onnxruntime</groupId>
+                            <artifactId>onnxruntime-engine</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>ai.djl</groupId>
+                            <artifactId>api</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>ai.djl.huggingface</groupId>
+                            <artifactId>tokenizers</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>com.microsoft.onnxruntime</groupId>
+                            <artifactId>onnxruntime</artifactId>
+                        </dependency>
+                    </requiresUnpack>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
