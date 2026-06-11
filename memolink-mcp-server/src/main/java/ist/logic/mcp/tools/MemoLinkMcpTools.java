@@ -69,20 +69,15 @@ public class MemoLinkMcpTools {
     }
 
     @Tool(description = """
-            Search md files using semantic search by default.
+            Search md files using semantic vector search by default.
             Returns ranked results with id, title, and relevance score.
-            Higher score means more relevant.
-            Falls back to keyword search if the embedding model is not available.
+            Higher score means more relevant. Matches conceptually related
+            content and includes exact-keyword fallbacks and metadata ranking.
             """)
     public List<SearchResult> search_md_files(String query) {
         try {
-            if (embeddingService.isAvailable()) {
-                float[] qEmb = embeddingService.embed(query);
-                if (qEmb != null) {
-                    return holder.getSearchService().semanticSearch(qEmb, 10);
-                }
-            }
-            return holder.getSearchService().searchWithScores(query, 10);
+            return holder.getSearchService().hybridSearch(
+                    query, embeddingService, 10, holder.getGraph()::getMdFile);
         } catch (IOException e) {
             return List.of();
         }

@@ -106,6 +106,9 @@ MEMOLINK_NOTES_DIR=~/notes \
 The server reads JSON-RPC from stdin and writes responses to stdout.  
 On first start it extracts the ONNX model to `~/.memolink/models/` (~86 MB, one-time only).
 
+### Optional Headroom Compression
+Memolink supports an optional `headroom` compression sidecar to reduce token limits. Set `HEADROOM_ENABLED=false` in your `.env` to disable it if you do not want to use compression or run the sidecar.
+
 ---
 
 ## 3. Mode 2 — HTTP/SSE (remote, API key auth)
@@ -285,7 +288,7 @@ File: `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`)
 |---|---|---|
 | `list_md_files` | READ | List all note IDs |
 | `get_md_file` | READ | Read a note's content, tags, wiki-links |
-| `search_md_files` | READ | Hybrid BM25 + semantic search |
+| `search_md_files` | READ | Semantic vector search (falls back to BM25) |
 | `semantic_search` | READ | Pure vector search (embeddings) |
 | `get_related_md_files` | READ | BFS graph neighbours |
 | `get_graph_context` | READ | Note + 1-hop neighbours with relationship types |

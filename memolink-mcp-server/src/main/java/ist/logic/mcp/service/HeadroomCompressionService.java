@@ -104,13 +104,13 @@ public class HeadroomCompressionService {
 
             JsonNode body = mapper.readTree(response.body());
 
-            // Log compression stats at DEBUG level to keep MCP stdout clean
-            if (log.isDebugEnabled()) {
-                double ratio = body.path("compression_ratio").asDouble(1.0);
-                int    saved = body.path("original_tokens").asInt(0)
-                             - body.path("compressed_tokens").asInt(0);
-                log.debug("Headroom compressed: ratio={:.2f} tokens_saved={}", ratio, saved);
-            }
+            // Print compression stats to stderr to keep MCP stdout clean but visible in logs
+            double ratio = body.path("compression_ratio").asDouble(1.0);
+            int original = body.path("original_tokens").asInt(0);
+            int compressed = body.path("compressed_tokens").asInt(0);
+            int saved = original - compressed;
+            System.err.printf("[Headroom] Compressed text: tokens %d -> %d (saved %d), ratio=%.2f%n", 
+                    original, compressed, saved, ratio);
 
             return body.path("compressed").asText(content);
 

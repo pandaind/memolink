@@ -33,8 +33,8 @@ import java.util.function.Function;
  */
 public class GraphSearchService implements Closeable {
 
-    private static final float ALPHA = 0.6f;  // BM25 weight
-    private static final float BETA  = 0.4f;  // KNN weight
+    private static final float ALPHA = 0.2f;  // BM25 weight
+    private static final float BETA  = 0.8f;  // KNN weight
 
     private final Directory        directory;
     private final StandardAnalyzer analyzer;

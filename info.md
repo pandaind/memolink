@@ -501,10 +501,8 @@ Build:
 
 # DO NOT BUILD INITIALLY
 
-❌ embeddings
 ❌ vector DB
 ❌ Neo4j
-❌ semantic AI
 ❌ distributed systems
 ❌ realtime sync
 

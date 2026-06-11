@@ -1,12 +1,11 @@
 # MemoLink
 
-> Transform markdown notes into an AI-navigable knowledge graph with Obsidian-like visualization.
+> An AI-native knowledge graph engine for your markdown notes.
 
-MemoLink scans a folder of `.md` files, discovers relationships between them (via wiki-links, shared tags, and shared keywords), and exposes the result as:
+MemoLink scans your local `.md` files, maps the relationships between them using wiki-links, tags, and semantic concepts, and exposes this interconnected graph to:
 
-- an **interactive Cytoscape.js graph viewer** (Spring Boot starter)
-- **Spring AI tools** so any LLM agent can search and traverse your notes (Spring Boot starter)
-- a **Model Context Protocol (MCP) server** for Claude Desktop, Cursor, and other MCP clients
+- **AI Agents** via a Model Context Protocol (MCP) server (e.g., Claude Desktop, Cursor) and Spring AI tools.
+- **Humans** via an interactive web-based graph viewer.
 
 ---
 

@@ -115,8 +115,9 @@ int                      size()
 #### `GraphSearchService`
 
 Wraps Apache Lucene 9.12.0 with an in-memory `ByteBuffersDirectory`.  
-Indexed fields per document: `id`, `title`, `content`, `tags`, `headings`.  
+Indexed fields per document: `id`, `title`, `content`, `tags`, `headings`, and an `embedding` field if embeddings are enabled.
 Queries use `MultiFieldQueryParser` with AND default operator. Raw query is tried first; escaping is used as fallback only when the raw form fails to parse.  
+When the embedding model is available, `semanticSearch` performs a `KnnFloatVectorQuery` for pure vector search.
 Returns a ranked `List<SearchResult>` (each entry carries `id`, `title`, and `score`).
 
 #### `GraphWatchService`
@@ -226,7 +227,7 @@ The auto-configuration is `@ConditionalOnClass(Tool.class)` — it is a no-op if
 
 | Method | Return type | Description |
 |--------|-------------|-------------|
-| `searchMdFiles(String query)` | `List<SearchResult>` | Lucene search; up to 10 hits ranked by relevance, each with `id`, `title`, `score` |
+| `searchMdFiles(String query)` | `List<SearchResult>` | Semantic vector search (falls back to Lucene); up to 10 hits ranked by relevance, each with `id`, `title`, `score` |
 | `getRelatedMdFiles(String fileId)` | `List<String>` | Graph traversal (depth=2, max 5 neighbors, min weight 3) |
 | `getMdFileContent(String fileId)` | `NoteDetail` | Structured note: `id`, `title`, `tags`, `headings`, `wikiLinks`, `body` (clean prose) |
 | `traverseGraph(String fileId, int depth)` | `List<String>` | BFS traversal up to the given depth (capped at 3) |
@@ -264,7 +265,7 @@ Exposes the knowledge graph as an MCP server using the stdio transport, making i
 
 | Tool name | Return type | Description |
 |-----------|-------------|-------------|
-| `search_md_files` | `List<SearchResult>` | Lucene search; returns ranked hits with `id`, `title`, `score` |
+| `search_md_files` | `List<SearchResult>` | Semantic search (fallback to Lucene); returns ranked hits with `id`, `title`, `score` |
 | `get_related_md_files` | `List<String>` | Graph traversal from a file |
 | `get_md_file` | `NoteDetail` | Structured note content |
 | `traverse_graph` | `List<String>` | BFS traversal with configurable depth |
@@ -321,9 +322,9 @@ For the V1 use case (personal/team notes, typically hundreds to a few thousand f
 - Zero infrastructure — no database, no external service.
 - Live-updated incrementally — only changed files are re-parsed on each save.
 
-### Why not embeddings / vector search?
+### Why use an embedded ONNX model for embeddings?
 
-The relationship signals (wiki-links, tags, keywords) already encode the *author's* intent — they are stronger signals than cosine similarity of embeddings for this use case. Embeddings are explicitly deferred to V2.
+For local, privacy-preserving semantic search, the system uses an embedded `all-MiniLM-L6-v2` ONNX model or the optional `headroom` compression sidecar running `kompress-small`. This avoids the need for a bulky external vector database while ensuring search results can capture conceptual similarities beyond explicit wiki-links and keywords.
 
 ### Why two starters instead of one?
 
@@ -376,7 +377,5 @@ Tests live in `memolink-core` (`GraphBuilderServiceTest`) and cover scanning, pa
 
 | Feature | Reason deferred |
 |---------|----------------|
-| Embeddings / vector search | Adds infrastructure; keyword signals sufficient for V1 |
 | Neo4j / graph database | In-memory sufficient at personal-notes scale |
 | Authentication | Left to the consuming application |
-| Semantic similarity | Deferred to V2 with embedding support |
