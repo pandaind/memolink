@@ -10,26 +10,44 @@ MemoLink turns a folder of plain Markdown files into an intelligent knowledge gr
 
 ## High-Level Architecture
 
-```
-Markdown Files (*.md)
-        │
-        ▼
-┌─────────────────────────────────────────────────────┐
-│                   memolink-core                     │
-│                                                     │
-│  MdFileScannerService  → finds all .md files        │
-│  MdFileParserService   → extracts metadata          │
-│  RelationshipEngine    → scores pairwise edges      │
-│  GraphBuilderService   → orchestrates the pipeline  │
-│  GraphSearchService    → Lucene full-text index     │
-│  GraphTraversalService → BFS graph traversal        │
-│  GraphWatchService     → debounced file watcher     │
-└────────────────────┬────────────────────────────────┘
-                     │  KnowledgeGraph (in-memory)
-          ┌──────────┼──────────┐
-          ▼          ▼          ▼
-   Viewer Starter  AI Starter  MCP Server
-   (REST + UI)    (@Tool)     (stdio/MCP)
+```mermaid
+graph TD
+    subgraph Filesystem
+        MD[Markdown Notes Vault]
+    end
+
+    subgraph Core["memolink-core (Pure Java)"]
+        direction TB
+        Scan[MdFileScannerService]
+        Parse[MdFileParserService]
+        Rel[RelationshipEngine]
+        Index[(GraphSearchService<br/>Lucene BM25 + KNN)]
+        KG[(KnowledgeGraph<br/>In-Memory)]
+        
+        Scan -->|Finds .md files| Parse
+        Parse -->|Extracts text, metadata & links| Rel
+        Rel -->|Scores shared tags & wiki-links| KG
+        Parse -.->|Extracts local embeddings| Index
+    end
+
+    subgraph Server["memolink-mcp-server (Spring Boot)"]
+        MCPApp[MCP Server<br/>stdio or SSE]
+        Headroom{{Headroom Sidecar<br/>Python FastAPI}}
+        ONNX[kompress-small ONNX]
+        
+        Headroom --- ONNX
+        MCPApp <-->|POST /compress| Headroom
+    end
+
+    subgraph Clients["LLM Clients"]
+        Claude[Claude Desktop / Cursor]
+    end
+
+    MD --> Scan
+    KG --> MCPApp
+    Index --> MCPApp
+
+    MCPApp <-->|JSON-RPC| Claude
 ```
 
 ---

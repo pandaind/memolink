@@ -119,6 +119,10 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
 
  For comprehensive guidelines on how an AI should use these tools, please refer to the [Agent Instructions](AGENT_INSTRUCTIONS.md).
 
+ #### 100% Local Semantic Embeddings
+
+ Memolink features built-in semantic vector search. It runs the `all-MiniLM-L6-v2` ONNX model entirely locally inside the Java process. Your notes are never sent to external APIs for embedding generation, ensuring complete privacy, zero API costs, and lightning-fast indexing.
+
  #### Headroom Compression Sidecar
 
  Memolink utilizes an optional Python FastAPI sidecar (Headroom) running a `kompress-small` ONNX model to compress markdown note bodies before sending them to the LLM to save token limits. 

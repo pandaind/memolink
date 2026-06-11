@@ -33,6 +33,7 @@ services:
 
   # ── headroom: kompress-small ONNX compression sidecar ─────────────────────
   headroom:
+    image: logicist/memolink-headroom:latest
     build:
       context: docker/headroom
       # Change this build-arg to swap to kompress-base (higher quality, ~600 MB):
@@ -57,6 +58,7 @@ services:
 
   # ── memolink-mcp-server: Java MCP server (HTTP/SSE mode) ──────────────────
   memolink:
+    image: logicist/memolink:latest
     build:
       context: .                          # full repo root for the Maven reactor
       dockerfile: docker/memolink/Dockerfile
