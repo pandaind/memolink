@@ -15,7 +15,7 @@ echo "--- MEMOLINK TELEMETRY ---"
 
 if [ "$EXIT_CODE" -eq 0 ]; then
     echo "✅ [SUCCESS] Agent execution completed at $END_TIME."
-    echo "ℹ️ Note: The agent should have already logged its architectural decisions to the MemoLink Vault via the 'create_md_file' MCP tool."
+    echo "ℹ️ Note: The agent should have already logged its architectural decisions and updated the dynamic skills in the MemoLink Vault via MCP."
 else
     echo "❌ [FAILURE] Agent execution failed with exit code: $EXIT_CODE at $END_TIME."
     echo "⚠️ Recommendation: If the failure was due to an environment issue, instruct the agent to document the fix in MemoLink for future reference."
