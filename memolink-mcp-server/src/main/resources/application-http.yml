@@ -22,6 +22,8 @@ spring:
     mcp:
       server:
         type: SYNC                  # Spring AI WebMVC uses SYNC over HTTP
+        sse-endpoint: /mcp/sse      # override default /sse → match mcp.json
+        sse-message-endpoint: /mcp/message
 
 server:
   port: ${MEMOLINK_HTTP_PORT:8765}
@@ -48,7 +50,17 @@ memolink:
 
 logging:
   level:
-    ist.logic: INFO
-    org.springframework.security: WARN
+    ist.logic: DEBUG
+    org.springframework.security: DEBUG
   pattern:
     console: "%d{HH:mm:ss} %-5level %logger{36} - %msg%n"
+
+# ── Spring Actuator (healthcheck for Docker) ──────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

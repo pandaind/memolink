@@ -55,6 +55,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Actuator: /actuator/health for Docker healthcheck (HTTP/SSE mode only) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <!-- HTTP/SSE mode: mvn package -Phttp  OR  activate profile in mcp.json -->

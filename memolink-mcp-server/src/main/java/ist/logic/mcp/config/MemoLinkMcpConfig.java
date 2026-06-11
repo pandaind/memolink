@@ -23,7 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 @Configuration
-@EnableConfigurationProperties({NoteTemplateProperties.class, AuthProperties.class})
+@EnableConfigurationProperties({NoteTemplateProperties.class, AuthProperties.class, HeadroomProperties.class})
 public class MemoLinkMcpConfig {
 
     private static final Logger log = LoggerFactory.getLogger(MemoLinkMcpConfig.class);

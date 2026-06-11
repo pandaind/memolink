@@ -93,30 +93,39 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
 ---
 
 ### 3 — MCP Server (Claude Desktop / Cursor)
+ 
+ Build the fat JAR:
+ 
+ ```bash
+ mvn -pl memolink-mcp-server package -am
+ ```
+ 
+ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+ 
+ ```json
+ {
+   "mcpServers": {
+     "memolink": {
+       "command": "java",
+       "args": ["-jar", "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"],
+       "env": {
+         "MEMOLINK_NOTES_DIR": "/path/to/your/notes"
+       }
+     }
+   }
+ }
+ ```
+ 
+ Restart Claude Desktop. It will now have access to your knowledge graph through the MCP tools: `search_md_files` (which defaults to semantic search), `get_related_md_files`, `get_md_file`, `traverse_graph`, and more.
 
-Build the fat JAR:
+ For comprehensive guidelines on how an AI should use these tools, please refer to the [Agent Instructions](AGENT_INSTRUCTIONS.md).
 
-```bash
-mvn -pl memolink-mcp-server package -am
-```
+ #### Headroom Compression Sidecar
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "memolink": {
-      "command": "java",
-      "args": ["-jar", "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"],
-      "env": {
-        "MEMOLINK_NOTES_DIR": "/path/to/your/notes"
-      }
-    }
-  }
-}
-```
-
-Restart Claude Desktop. It will now have access to your knowledge graph through four MCP tools: `search_md_files`, `get_related_md_files`, `get_md_file`, and `traverse_graph`.
+ Memolink utilizes an optional Python FastAPI sidecar (Headroom) running a `kompress-small` ONNX model to compress markdown note bodies before sending them to the LLM to save token limits. 
+ 
+ - **Disable Compression:** Set `HEADROOM_ENABLED=false` in `.env`.
+ - **Docker Compose Setup:** The headroom sidecar requires the `compression` profile. To run Memolink natively without compression, you can just run `docker compose up memolink`. If you wish to use compression, run `docker compose --profile compression up`.
 
 ---
 

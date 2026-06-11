@@ -8,6 +8,7 @@ import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.MdFileParserService;
+import ist.logic.mcp.service.HeadroomCompressionService;
 import ist.logic.mcp.template.NoteTemplateService;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Service;
@@ -46,35 +47,42 @@ import java.util.stream.Collectors;
 @Service
 public class MemoLinkMcpTools {
 
-    private final GraphHolder           holder;
-    private final GraphTraversalService traversalService;
-    private final Path                  notesDir;
-    private final NoteTemplateService   noteTemplateService;
-    private final EmbeddingService      embeddingService;
+    private final GraphHolder               holder;
+    private final GraphTraversalService     traversalService;
+    private final Path                      notesDir;
+    private final NoteTemplateService       noteTemplateService;
+    private final EmbeddingService          embeddingService;
+    private final HeadroomCompressionService headroomService;
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
                            Path mdGraphNotesDir,
                            NoteTemplateService noteTemplateService,
-                           EmbeddingService embeddingService) {
+                           EmbeddingService embeddingService,
+                           HeadroomCompressionService headroomService) {
         this.holder               = holder;
         this.traversalService     = traversalService;
         this.notesDir             = mdGraphNotesDir;
         this.noteTemplateService  = noteTemplateService;
         this.embeddingService     = embeddingService;
+        this.headroomService      = headroomService;
     }
 
     @Tool(description = """
-            Search md files by query text using hybrid BM25 + semantic search.
+            Search md files using semantic search by default.
             Returns ranked results with id, title, and relevance score.
-            Higher score means more relevant. Prefer top results; skip score < 0.5.
-            When the embedding model is available, results match conceptually related
-            content even without exact keyword overlap.
+            Higher score means more relevant.
+            Falls back to keyword search if the embedding model is not available.
             """)
     public List<SearchResult> search_md_files(String query) {
         try {
-            return holder.getSearchService().hybridSearch(
-                    query, embeddingService, 10, holder.getGraph()::getMdFile);
+            if (embeddingService.isAvailable()) {
+                float[] qEmb = embeddingService.embed(query);
+                if (qEmb != null) {
+                    return holder.getSearchService().semanticSearch(qEmb, 10);
+                }
+            }
+            return holder.getSearchService().searchWithScores(query, 10);
         } catch (IOException e) {
             return List.of();
         }
@@ -96,7 +104,13 @@ public class MemoLinkMcpTools {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
         if (mdFile == null) return null;
         mdFile.recordAccess();   // Capability 5: metadata ranking
-        return NoteDetail.from(mdFile);
+        NoteDetail detail = NoteDetail.from(mdFile);
+        // Compress the body via headroom sidecar; falls back to original on error
+        String compressedBody = headroomService.compress(detail.body());
+        if (compressedBody == detail.body()) return detail;   // unchanged — return as-is
+        return new NoteDetail(
+                detail.id(), detail.title(), detail.tags(),
+                detail.headings(), detail.wikiLinks(), compressedBody);
     }
 
     @Tool(description = """
@@ -148,7 +162,15 @@ public class MemoLinkMcpTools {
     public GraphContextResult get_graph_context(String file_id) {
         MdFileMetadata m = holder.getGraph().getMdFile(file_id);
         if (m != null) m.recordAccess();
-        return traversalService.buildContext(holder.getGraph(), file_id);
+        GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), file_id);
+        if (ctx == null) return null;
+        // Compress the focal note's body; neighbour summaries are already short
+        String compressedBody = headroomService.compress(ctx.body());
+        if (compressedBody == ctx.body()) return ctx;   // unchanged
+        return new GraphContextResult(
+                ctx.id(), ctx.title(), ctx.tags(),
+                ctx.headings(), ctx.wikiLinks(), compressedBody,
+                ctx.neighbors());
     }
 
     @Tool(description = """
@@ -349,8 +371,10 @@ public class MemoLinkMcpTools {
         List<Map<String, Object>> sources = hits.stream()
                 .map(r -> {
                     MdFileMetadata m = holder.getGraph().getMdFile(r.id());
-                    String excerpt = m == null ? "" :
+                    String raw = m == null ? "" :
                             m.getContent().substring(0, Math.min(m.getContent().length(), 600));
+                    // Compress the excerpt before sending to the LLM
+                    String excerpt = headroomService.compress(raw);
                     return Map.<String, Object>of(
                             "id",      r.id(),
                             "title",   r.title(),

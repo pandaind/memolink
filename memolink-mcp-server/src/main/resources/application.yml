@@ -20,6 +20,15 @@ memolink:
   auth:
     enabled: false
 
+  # ── Headroom kompress compression sidecar ────────────────────────────────
+  # Set HEADROOM_ENABLED=true and HEADROOM_URL=http://headroom:8787 (or any
+  # reachable URL) to enable token compression of tool outputs.
+  headroom:
+    url:             ${HEADROOM_URL:}
+    enabled:         ${HEADROOM_ENABLED:false}
+    min-chars:       ${HEADROOM_MIN_CHARS:300}
+    timeout-seconds: ${HEADROOM_TIMEOUT_SECONDS:30}
+
 spring:
   application:
     name: memolink-mcp-server

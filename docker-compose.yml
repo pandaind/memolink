@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MemoLink + Headroom — Docker Compose
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Architecture:
+#
+#   LLM Client (Claude Desktop / VS Code / Cursor)
+#        │  HTTP/SSE  → localhost:8765
+#        ▼
+#   ┌─────────────────────────────┐
+#   │  memolink-mcp-server :8765  │  Java · Spring Boot HTTP/SSE mode
+#   │  (HeadroomCompressionService│
+#   │   compresses tool outputs)  │
+#   └──────────────┬──────────────┘
+#                  │  POST /compress → :8787  (internal Docker network)
+#                  ▼
+#   ┌─────────────────────────────┐
+#   │  headroom sidecar    :8787  │  Python · FastAPI · kompress-small ONNX
+#   └─────────────────────────────┘
+#                  │
+#           shared notes volume
+#
+# Quick start:
+#   cp .env.example .env   # edit NOTES_DIR and API keys
+#   docker compose up --build
+#
+# LLM client config (VS Code mcp.json):
+#   { "memolink": { "type": "sse", "url": "http://localhost:8765/mcp/sse",
+#                   "headers": { "X-API-Key": "sk-vscode-changeme" } } }
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── headroom: kompress-small ONNX compression sidecar ─────────────────────
+  headroom:
+    build:
+      context: docker/headroom
+      # Change this build-arg to swap to kompress-base (higher quality, ~600 MB):
+      #   KOMPRESS_MODEL_ID: chopratejas/kompress-base
+      args:
+        KOMPRESS_MODEL_ID: ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
+    environment:
+      KOMPRESS_MODEL_ID:   ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
+      KOMPRESS_THRESHOLD:  ${KOMPRESS_THRESHOLD:-0.5}
+      KOMPRESS_CHUNK_WORDS: ${KOMPRESS_CHUNK_WORDS:-350}
+      HEADROOM_KOMPRESS_BACKEND: pytorch
+      # Limit ONNX internal thread pools to avoid CPU contention in containers
+      HEADROOM_KOMPRESS_ONNX_INTRA_THREADS: "2"
+      HEADROOM_KOMPRESS_ONNX_INTER_THREADS: "1"
+    ports:
+      # Expose on host for debugging/testing — remove in production
+      - "${HEADROOM_HOST_PORT:-8787}:8787"
+    # healthcheck is defined in the Dockerfile; referenced here for depends_on
+    restart: unless-stopped
+    profiles:
+      - compression
+
+  # ── memolink-mcp-server: Java MCP server (HTTP/SSE mode) ──────────────────
+  memolink:
+    build:
+      context: .                          # full repo root for the Maven reactor
+      dockerfile: docker/memolink/Dockerfile
+    environment:
+      # Notes directory (bind-mounted from host)
+      MEMOLINK_NOTES_DIR: /notes
+      # Spring profile — must be 'http' for HTTP/SSE transport
+      SPRING_PROFILES_ACTIVE: http
+      MEMOLINK_HTTP_PORT: "8765"
+
+      # ── Headroom integration ──────────────────────────────────────────────
+      # URL of the headroom sidecar on the internal Docker network
+      HEADROOM_URL:       http://headroom:8787
+      HEADROOM_ENABLED:   ${HEADROOM_ENABLED:-true}
+      # Skip compression for content shorter than this many chars (fast-path)
+      HEADROOM_MIN_CHARS: ${HEADROOM_MIN_CHARS:-300}
+
+      # ── API keys (override in .env) ────────────────────────────────────────
+      MEMOLINK_KEY_VSCODE: ${MEMOLINK_KEY_VSCODE:-sk-vscode-changeme}
+      MEMOLINK_KEY_CLAUDE: ${MEMOLINK_KEY_CLAUDE:-sk-claude-changeme}
+      MEMOLINK_KEY_CI:     ${MEMOLINK_KEY_CI:-sk-ci-changeme}
+    ports:
+      # LLM clients connect here
+      - "${MEMOLINK_HOST_PORT:-8765}:8765"
+    volumes:
+      # Bind-mount your notes directory.  Set NOTES_DIR in .env or inline:
+      #   NOTES_DIR=/Users/you/obsidian-vault docker compose up
+      - ${NOTES_DIR:-./notes}:/notes:rw
+    depends_on:
+      headroom:
+        condition: service_healthy     # wait until kompress model is fully loaded
+        required: false                # allow starting without headroom
+    restart: unless-stopped

@@ -9,7 +9,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -46,6 +49,8 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     /** Pre-built lookup: raw key value → Authentication token. */
     private final Map<String, UsernamePasswordAuthenticationToken> keyRegistry;
+    
+    private final SecurityContextRepository securityContextRepository = new RequestAttributeSecurityContextRepository();
 
     public ApiKeyAuthFilter(AuthProperties authProperties) {
         this.keyRegistry = authProperties.getClients().stream()
@@ -57,12 +62,23 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
                                     .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
                                     .collect(Collectors.toList());
                             var token = new UsernamePasswordAuthenticationToken(
-                                    c.getName(), null, authorities);
+                                     c.getName(), null, authorities);
                             return token;
                         }
                 ));
         log.info("API key auth filter active — {} client(s) registered",
                 authProperties.getClients().size());
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        return "/actuator/health".equals(path) || "/actuator/health/".equals(path);
+    }
+
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
     }
 
     @Override
@@ -86,7 +102,11 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         log.debug("Authenticated client '{}' with roles {}", auth.getName(), auth.getAuthorities());
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, request, response);
+
         chain.doFilter(request, response);
     }
 
