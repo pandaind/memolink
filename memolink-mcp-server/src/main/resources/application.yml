@@ -1,5 +1,5 @@
 memolink:
-  notes-dir: ${MEMOLINK_NOTES_DIR:${user.home}/notes}
+  vault-dir: ${MEMOLINK_VAULT_DIR:${user.home}/vault}
   note:
     # Path to the Mustache template used when rendering notes to markdown.
     # Override with file:/path/to/your/note.mustache to customise without rebuilding.

@@ -57,7 +57,7 @@ Create `~/.memolink/.env`:
 ```bash
 mkdir -p ~/.memolink
 cat > ~/.memolink/.env << 'EOF'
-MEMOLINK_NOTES_DIR=/Users/your-name/notes
+MEMOLINK_VAULT_DIR=/Users/your-name/vault
 MEMOLINK_HTTP_PORT=8765
 MEMOLINK_KEY_VSCODE=sk-vscode-REPLACE_ME
 MEMOLINK_KEY_CLAUDE=sk-claude-REPLACE_ME
@@ -98,7 +98,7 @@ mvn package -pl memolink-mcp-server -am -DskipTests -q
 ### Run manually (for testing)
 
 ```bash
-MEMOLINK_NOTES_DIR=~/notes \
+MEMOLINK_VAULT_DIR=~/vault \
   java --enable-native-access=ALL-UNNAMED \
        -jar memolink-mcp-server/target/memolink-mcp-server-0.1.0-SNAPSHOT.jar
 ```
@@ -129,7 +129,7 @@ java --enable-native-access=ALL-UNNAMED \
 Or pass everything inline:
 
 ```bash
-MEMOLINK_NOTES_DIR=~/notes \
+MEMOLINK_VAULT_DIR=~/vault \
 MEMOLINK_HTTP_PORT=8765 \
 MEMOLINK_KEY_VSCODE=sk-vscode-abc123 \
 MEMOLINK_KEY_CLAUDE=sk-claude-xyz789 \
@@ -177,7 +177,7 @@ Missing or invalid key returns:
         "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"
       ],
       "env": {
-        "MEMOLINK_NOTES_DIR": "/Users/your-name/notes"
+        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault"
       }
     }
   }
@@ -228,7 +228,7 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
         "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"
       ],
       "env": {
-        "MEMOLINK_NOTES_DIR": "/Users/your-name/notes"
+        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault"
       }
     }
   }
@@ -237,7 +237,7 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ### HTTP mode (read-only client)
 
-Claude Desktop does not yet support `X-API-Key` headers natively, so run a local proxy or use an SSE-compatible MCP bridge. Alternatively, give Claude Desktop its own stdio server instance pointed at the same notes directory.
+Claude Desktop does not yet support `X-API-Key` headers natively, so run a local proxy or use an SSE-compatible MCP bridge. Alternatively, give Claude Desktop its own stdio server instance pointed at the same vault directory.
 
 ---
 
@@ -258,7 +258,7 @@ File: `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`)
         "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"
       ],
       "env": {
-        "MEMOLINK_NOTES_DIR": "/Users/your-name/notes"
+        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault"
       }
     }
   }
@@ -351,7 +351,7 @@ memolink:
 ```bash
 # Generate all keys at once and write to .env
 mkdir -p ~/.memolink
-printf "MEMOLINK_NOTES_DIR=%s\n" "$HOME/notes" > ~/.memolink/.env
+printf "MEMOLINK_VAULT_DIR=%s\n" "$HOME/vault" > ~/.memolink/.env
 printf "MEMOLINK_HTTP_PORT=8765\n" >> ~/.memolink/.env
 printf "MEMOLINK_KEY_VSCODE=sk-vscode-%s\n"  "$(openssl rand -base64 24 | tr -d '=+/')" >> ~/.memolink/.env
 printf "MEMOLINK_KEY_CLAUDE=sk-claude-%s\n"  "$(openssl rand -base64 24 | tr -d '=+/')" >> ~/.memolink/.env

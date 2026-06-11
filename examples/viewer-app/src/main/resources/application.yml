@@ -1,8 +1,8 @@
 memolink:
   # Path to the directory that contains your Markdown (.md) files.
   # The starter scans this directory recursively on startup.
-  # Defaults to ~/notes when not set.
-  notes-dir: examples/sample-notes   # relative paths resolve from the working directory
+  # Defaults to ~/vault when not set.
+  vault-dir: examples/sample-notes   # relative paths resolve from the working directory
 
 server:
   port: 8080

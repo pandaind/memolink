@@ -68,8 +68,8 @@ RUN apt-get update \
 # path, which EmbeddingService needs to extract model.onnx from the jar at startup.
 RUN groupadd -r memolink \
     && useradd -r -d /home/memolink -g memolink memolink \
-    && mkdir -p /home/memolink /notes \
-    && chown memolink:memolink /home/memolink /notes /app
+    && mkdir -p /home/memolink /vault \
+    && chown memolink:memolink /home/memolink /vault /app
 
 COPY --from=build --chown=memolink:memolink \
     /workspace/memolink-mcp-server/target/memolink-mcp-server-*.jar \

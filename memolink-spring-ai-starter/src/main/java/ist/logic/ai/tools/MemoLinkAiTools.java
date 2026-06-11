@@ -44,14 +44,14 @@ public class MemoLinkAiTools {
 
     private final GraphHolder           holder;
     private final GraphTraversalService traversalService;
-    private final Path                  notesDir;
+    private final Path                  vaultDir;
 
     public MemoLinkAiTools(GraphHolder holder,
                           GraphTraversalService traversalService,
-                          Path notesDir) {
+                          Path vaultDir) {
         this.holder           = holder;
         this.traversalService = traversalService;
-        this.notesDir         = notesDir;
+        this.vaultDir         = vaultDir;
     }
 
     @Tool(description = """
@@ -97,7 +97,7 @@ public class MemoLinkAiTools {
     }
 
     @Tool(description = """
-            Create a new markdown file in the notes directory.
+            Create a new markdown file in the vault directory.
             fileId    : target filename, e.g. "my-note.md" (normalised to kebab-case automatically).
             title     : note title rendered as the top-level H1 heading.
             body      : main markdown content (paragraphs, code blocks, etc.).
@@ -115,13 +115,13 @@ public class MemoLinkAiTools {
                                List<String> wikiLinks,
                                List<String> tags) {
         String normalizedId = MdFileParserService.normalizeMdFileId(fileId);
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         if (Files.exists(target)) {
             return "File already exists: " + normalizedId + ". Use updateMdFile to modify it.";
         }
         try {
             List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wikiLinks);
-            Files.createDirectories(notesDir);
+            Files.createDirectories(vaultDir);
             Files.writeString(target, buildMarkdown(title, body, allLinks, tags),
                     StandardOpenOption.CREATE_NEW);
             String autoLinked = allLinks.stream()
@@ -135,7 +135,7 @@ public class MemoLinkAiTools {
     }
 
     @Tool(description = """
-            Update an existing markdown file in the notes directory.
+            Update an existing markdown file in the vault directory.
             Read the current content first with getMdFileContent if you want to preserve parts of it.
             fileId    : file to update, e.g. "spring-boot.md".
             title     : new H1 title for the file.
@@ -153,7 +153,7 @@ public class MemoLinkAiTools {
                                List<String> wikiLinks,
                                List<String> tags) {
         String normalizedId = MdFileParserService.normalizeMdFileId(fileId);
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         if (!Files.exists(target)) {
             return "File not found: " + normalizedId + ". Use createMdFile to create it.";
         }
@@ -179,14 +179,14 @@ public class MemoLinkAiTools {
     }
 
     @Tool(description = """
-            Delete an existing md file from the notes directory.
+            Delete an existing md file from the vault directory.
             fileId : the file to delete, e.g. "old-note.md".
             Returns the file ID on success, or an error message if the file does not exist.
             The knowledge graph is rebuilt automatically after deletion.
             """)
     public String deleteMdFile(String fileId) {
         String normalizedId = MdFileParserService.normalizeMdFileId(fileId);
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         if (!Files.exists(target)) {
             return "File not found: " + normalizedId;
         }

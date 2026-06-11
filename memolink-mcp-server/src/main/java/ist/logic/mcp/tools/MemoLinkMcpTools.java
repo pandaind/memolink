@@ -49,20 +49,20 @@ public class MemoLinkMcpTools {
 
     private final GraphHolder               holder;
     private final GraphTraversalService     traversalService;
-    private final Path                      notesDir;
+    private final Path                      vaultDir;
     private final NoteTemplateService       noteTemplateService;
     private final EmbeddingService          embeddingService;
     private final HeadroomCompressionService headroomService;
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
-                           Path mdGraphNotesDir,
+                           Path mdGraphVaultDir,
                            NoteTemplateService noteTemplateService,
                            EmbeddingService embeddingService,
                            HeadroomCompressionService headroomService) {
         this.holder               = holder;
         this.traversalService     = traversalService;
-        this.notesDir             = mdGraphNotesDir;
+        this.vaultDir             = mdGraphVaultDir;
         this.noteTemplateService  = noteTemplateService;
         this.embeddingService     = embeddingService;
         this.headroomService      = headroomService;
@@ -201,13 +201,13 @@ public class MemoLinkMcpTools {
                                  List<String> tags,
                                  Map<String, String> metadata) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         if (Files.exists(target)) {
             return "File already exists: " + normalizedId + ". Use update_md_file to modify it.";
         }
         try {
             List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wiki_links);
-            Files.createDirectories(notesDir);
+            Files.createDirectories(vaultDir);
             Files.writeString(target, noteTemplateService.render(title, body, tags, allLinks, metadata),
                     StandardOpenOption.CREATE_NEW);
             String autoLinked = allLinks.stream()
@@ -240,7 +240,7 @@ public class MemoLinkMcpTools {
                                  List<String> tags,
                                  Map<String, String> metadata) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         if (!Files.exists(target)) {
             return "File not found: " + normalizedId + ". Use create_md_file to create it.";
         }
@@ -261,7 +261,7 @@ public class MemoLinkMcpTools {
             """)
     public String delete_md_file(String file_id) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         if (!Files.exists(target)) {
             return "File not found: " + normalizedId;
         }
@@ -288,7 +288,7 @@ public class MemoLinkMcpTools {
         int clamped = Math.max(0, Math.min(10, importance));
         m.setImportance(clamped);
         // Persist into frontmatter by re-reading + updating the file
-        Path target = notesDir.resolve(normalizedId);
+        Path target = vaultDir.resolve(normalizedId);
         try {
             String content = Files.readString(target);
             String updated = setFrontmatterField(content, "importance", String.valueOf(clamped));

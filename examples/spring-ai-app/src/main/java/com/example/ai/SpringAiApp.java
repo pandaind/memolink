@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  * <p>The starter auto-configures:
  * <ul>
- *   <li>A {@code KnowledgeGraph} scanned from {@code memolink.notes-dir}.</li>
+ *   <li>A {@code KnowledgeGraph} scanned from {@code memolink.vault-dir}.</li>
  *   <li>A {@code MemoLinkAiTools} bean whose {@code @Tool} methods let the LLM
  *       search, traverse, and read your Markdown notes.</li>
  * </ul>
@@ -16,7 +16,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <p>Prerequisites:
  * <ul>
  *   <li>Set the {@code OPENAI_API_KEY} environment variable.</li>
- *   <li>Adjust {@code memolink.notes-dir} in {@code application.yml}.</li>
+ *   <li>Adjust {@code memolink.vault-dir} in {@code application.yml}.</li>
  * </ul>
  *
  * <p>Run with:

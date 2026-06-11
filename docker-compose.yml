@@ -18,10 +18,10 @@
 #   │  headroom sidecar    :8787  │  Python · FastAPI · kompress-small ONNX
 #   └─────────────────────────────┘
 #                  │
-#           shared notes volume
+#           shared vault volume
 #
 # Quick start:
-#   cp .env.example .env   # edit NOTES_DIR and API keys
+#   cp .env.example .env   # edit VAULT_DIR and API keys
 #   docker compose up --build
 #
 # LLM client config (VS Code mcp.json):
@@ -63,8 +63,8 @@ services:
       context: .                          # full repo root for the Maven reactor
       dockerfile: docker/memolink/Dockerfile
     environment:
-      # Notes directory (bind-mounted from host)
-      MEMOLINK_NOTES_DIR: /notes
+      # Vault directory (bind-mounted from host)
+      MEMOLINK_VAULT_DIR: /vault
       # Spring profile — must be 'http' for HTTP/SSE transport
       SPRING_PROFILES_ACTIVE: http
       MEMOLINK_HTTP_PORT: "8765"
@@ -84,9 +84,9 @@ services:
       # LLM clients connect here
       - "${MEMOLINK_HOST_PORT:-8765}:8765"
     volumes:
-      # Bind-mount your notes directory.  Set NOTES_DIR in .env or inline:
-      #   NOTES_DIR=/Users/you/obsidian-vault docker compose up
-      - ${NOTES_DIR:-./notes}:/notes:rw
+      # Bind-mount your vault directory.  Set VAULT_DIR in .env or inline:
+      #   VAULT_DIR=/Users/you/obsidian-vault docker compose up
+      - ${VAULT_DIR:-./vault}:/vault:rw
     depends_on:
       headroom:
         condition: service_healthy     # wait until kompress model is fully loaded

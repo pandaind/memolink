@@ -7,20 +7,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <pre>
  * memolink:
- *   notes-dir: /path/to/your/notes   # directory containing .md files
+ *   vault-dir: /path/to/your/vault   # directory containing .md files
  * </pre>
  */
 @ConfigurationProperties("memolink")
 public class MemoLinkViewerProperties {
 
     /** Root directory containing the Markdown files to index. */
-    private String notesDir = System.getProperty("user.home") + "/notes";
+    private String vaultDir = System.getProperty("user.home") + "/vault";
 
-    public String getNotesDir() {
-        return notesDir;
+    public String getVaultDir() {
+        return vaultDir;
     }
 
-    public void setNotesDir(String notesDir) {
-        this.notesDir = notesDir;
+    public void setVaultDir(String vaultDir) {
+        this.vaultDir = vaultDir;
     }
 }

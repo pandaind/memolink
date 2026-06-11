@@ -167,7 +167,7 @@ Neighbors at each level are sorted by descending edge weight before the `maxNeig
 #### What it provides
 
 - `MemoLinkViewerAutoConfiguration` — registers all beans below automatically when added as a dependency.
-- `KnowledgeGraph` bean — built from `memolink.notes-dir` on startup; incrementally rebuilt on file changes.
+- `KnowledgeGraph` bean — built from `memolink.vault-dir` on startup; incrementally rebuilt on file changes.
 - `GraphSearchService` bean — Lucene index populated from the graph.
 - `GraphTraversalService` bean — stateless, reusable.
 - `GraphWatchService` bean — debounced file watcher that triggers incremental rebuild.
@@ -188,7 +188,7 @@ META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
 
 ```yaml
 memolink:
-  notes-dir: ~/notes          # default; override in application.yml
+  vault-dir: ~/vault          # default; override in application.yml
 ```
 
 #### REST Endpoints
@@ -293,7 +293,7 @@ Exposes the knowledge graph as an MCP server using the stdio transport, making i
 ```yaml
 # application.yml (baked into the JAR)
 memolink:
-  notes-dir: ${MEMOLINK_NOTES_DIR:${user.home}/notes}
+  vault-dir: ${MEMOLINK_VAULT_DIR:${user.home}/vault}
 
 spring:
   main:
@@ -315,7 +315,7 @@ The console logging pattern is suppressed (`pattern.console: ""`) so the stdio c
       "command": "java",
       "args": ["-jar", "/absolute/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"],
       "env": {
-        "MEMOLINK_NOTES_DIR": "/Users/yourname/notes"
+        "MEMOLINK_VAULT_DIR": "/Users/yourname/vault"
       }
     }
   }

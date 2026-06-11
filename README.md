@@ -2,7 +2,7 @@
 
 > An AI-native knowledge graph engine for your markdown notes.
 
-MemoLink scans your local `.md` files, maps the relationships between them using wiki-links, tags, and semantic concepts, and exposes this interconnected graph to:
+MemoLink scans your local `.md` files, maps the relationships between them using wiki-links, tags, and semantic concepts, and exposes this interconnected vault to:
 
 - **AI Agents** via a Model Context Protocol (MCP) server (e.g., Claude Desktop, Cursor) and Spring AI tools.
 - **Humans** via an interactive web-based graph viewer.
@@ -34,11 +34,11 @@ Add one dependency to any Spring Boot web application:
 </dependency>
 ```
 
-Configure your notes directory in `application.yml`:
+Configure your vault directory in `application.yml`:
 
 ```yaml
 memolink:
-  notes-dir: /path/to/your/notes
+  vault-dir: /path/to/your/vault
 ```
 
 Run the app and open [http://localhost:8080](http://localhost:8080).  
@@ -87,7 +87,7 @@ public class ChatController {
 }
 ```
 
-The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFileContent`, and `traverseGraph` to answer questions grounded in your notes.
+The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFileContent`, and `traverseGraph` to answer questions grounded in your vault.
 
 ---
 
@@ -108,7 +108,7 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
        "command": "java",
        "args": ["-jar", "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"],
        "env": {
-         "MEMOLINK_NOTES_DIR": "/path/to/your/notes"
+         "MEMOLINK_VAULT_DIR": "/path/to/your/vault"
        }
      }
    }
@@ -121,7 +121,7 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
 
  #### 100% Local Semantic Embeddings
 
- Memolink features built-in semantic vector search. It runs the `all-MiniLM-L6-v2` ONNX model entirely locally inside the Java process. Your notes are never sent to external APIs for embedding generation, ensuring complete privacy, zero API costs, and lightning-fast indexing.
+ Memolink features built-in semantic vector search. It runs the `all-MiniLM-L6-v2` ONNX model entirely locally inside the Java process. Your vault's content is never sent to external APIs for embedding generation, ensuring complete privacy, zero API costs, and lightning-fast indexing.
 
  #### Headroom Compression Sidecar
 
@@ -176,7 +176,7 @@ Edges are built using an inverted index — only pairs that share at least one s
 
 ## Real-Time File Watching
 
-All starters watch `memolink.notes-dir` for `.md` file changes. When a file is saved, added, or deleted:
+All starters watch `memolink.vault-dir` for `.md` file changes. When a file is saved, added, or deleted:
 
 1. Changed paths are accumulated during a 500 ms debounce window.
 2. Only the changed files are re-parsed; unchanged notes are carried over.

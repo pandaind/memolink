@@ -36,7 +36,7 @@ public class MemoLinkAiAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public GraphHolder memoLinkAiHolder(MemoLinkAiProperties props) throws IOException {
-        Path rootDir = Path.of(props.getNotesDir()).toAbsolutePath();
+        Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         KnowledgeGraph graph = new GraphBuilderService().build(rootDir);
         GraphSearchService searchService = new GraphSearchService();
         searchService.index(graph.getAllMdFiles());
@@ -47,7 +47,7 @@ public class MemoLinkAiAutoConfiguration {
     @ConditionalOnMissingBean(name = "memoLinkAiWatchService")
     public GraphWatchService memoLinkAiWatchService(GraphHolder holder,
                                                    MemoLinkAiProperties props) throws IOException {
-        Path rootDir = Path.of(props.getNotesDir()).toAbsolutePath();
+        Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         GraphBuilderService builder = new GraphBuilderService();
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
@@ -70,7 +70,7 @@ public class MemoLinkAiAutoConfiguration {
     public MemoLinkAiTools memoLinkAiTools(GraphHolder holder,
                                          GraphTraversalService traversalService,
                                          MemoLinkAiProperties props) {
-        Path notesDir = Path.of(props.getNotesDir()).toAbsolutePath();
-        return new MemoLinkAiTools(holder, traversalService, notesDir);
+        Path vaultDir = Path.of(props.getVaultDir()).toAbsolutePath();
+        return new MemoLinkAiTools(holder, traversalService, vaultDir);
     }
 }

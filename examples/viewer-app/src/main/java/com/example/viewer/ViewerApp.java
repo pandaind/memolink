@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <p>The starter auto-configures:
  * <ul>
  *   <li>A {@code KnowledgeGraph} built by scanning all {@code .md} files under
- *       {@code memolink.notes-dir} (see {@code application.yml}).</li>
+ *       {@code memolink.vault-dir} (see {@code application.yml}).</li>
  *   <li>REST endpoints at {@code /memolink/api/graph}, {@code /memolink/api/search},
  *       {@code /memolink/api/files/{id}}, and {@code /memolink/api/traverse/{id}}.</li>
  *   <li>A static Cytoscape.js UI served from {@code /index.html}.</li>

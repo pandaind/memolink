@@ -31,8 +31,8 @@ public class MemoLinkMcpConfig {
     private static final String MODEL_RESOURCE_BASE = "classpath:models/all-MiniLM-L6-v2/";
     private static final String MODEL_CACHE_DIR     = ".memolink/models/all-MiniLM-L6-v2";
 
-    @Value("${memolink.notes-dir:${user.home}/notes}")
-    private String notesDir;
+    @Value("${memolink.vault-dir:${user.home}/vault}")
+    private String vaultDir;
 
     @Bean(destroyMethod = "close")
     public EmbeddingService embeddingService(ResourceLoader resourceLoader) {
@@ -47,7 +47,7 @@ public class MemoLinkMcpConfig {
         // Wait for the ONNX model to finish loading before building the graph so
         // that embedAll() can compute and store vector embeddings for every note.
         embeddingService.awaitReady(60_000);
-        Path rootDir = Path.of(notesDir).toAbsolutePath();
+        Path rootDir = Path.of(vaultDir).toAbsolutePath();
         KnowledgeGraph graph = new GraphBuilderService().build(rootDir, embeddingService);
         GraphSearchService searchService = new GraphSearchService();
         searchService.index(graph.getAllMdFiles());
@@ -57,7 +57,7 @@ public class MemoLinkMcpConfig {
     @Bean(destroyMethod = "close")
     public GraphWatchService graphWatchService(GraphHolder holder,
                                                EmbeddingService embeddingService) throws IOException {
-        Path rootDir = Path.of(notesDir).toAbsolutePath();
+        Path rootDir = Path.of(vaultDir).toAbsolutePath();
         GraphBuilderService builder = new GraphBuilderService();
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
@@ -76,8 +76,8 @@ public class MemoLinkMcpConfig {
     }
 
     @Bean
-    public Path mdGraphNotesDir() {
-        return Path.of(notesDir).toAbsolutePath();
+    public Path mdGraphVaultDir() {
+        return Path.of(vaultDir).toAbsolutePath();
     }
 
     // ── Model extraction ──────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ public class MemoLinkViewerAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public GraphRegistry memoLinkViewerRegistry(MemoLinkViewerProperties props) throws IOException {
-        Path rootDir = Path.of(props.getNotesDir()).toAbsolutePath();
+        Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         KnowledgeGraph graph = new GraphBuilderService().build(rootDir);
         GraphSearchService searchService = new GraphSearchService();
         searchService.index(graph.getAllMdFiles());
@@ -44,7 +44,7 @@ public class MemoLinkViewerAutoConfiguration {
     @ConditionalOnMissingBean(name = "memoLinkViewerWatchService")
     public GraphWatchService memoLinkViewerWatchService(GraphRegistry registry,
                                                        MemoLinkViewerProperties props) throws IOException {
-        Path rootDir = Path.of(props.getNotesDir()).toAbsolutePath();
+        Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         GraphBuilderService builder = new GraphBuilderService();
         return new GraphWatchService(rootDir, changedPaths -> {
             try {

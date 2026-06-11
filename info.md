@@ -93,7 +93,7 @@ Keep it framework-independent.
 Example:
 
 ```text id="6jlwme"
-notes/**/*.md
+vault/**/*.md
 ```
 
 ---
