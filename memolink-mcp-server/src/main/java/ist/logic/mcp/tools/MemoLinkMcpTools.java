@@ -223,14 +223,16 @@ public class MemoLinkMcpTools {
     @Tool(description = """
             Update an existing markdown file in the notes directory.
             Read current content first with get_md_file if you want to preserve parts of it.
-            file_id   : file to update, e.g. "spring-boot.md".
+            file_id   : file to update, e.g. "spring-boot.md" or "skills/java/spring-ai.md".
             title     : new H1 title.
             body      : new main markdown content.
-            wiki_links: complete new list of wiki-link targets.
+            wiki_links: explicit list of wiki-link targets to include. Additional related
+                        notes are discovered automatically and merged in.
             tags      : complete new list of tags (no # prefix).
             metadata  : key-value pairs for the note frontmatter. Pass existing values
                         from the current note to preserve them; omit a key to drop it.
-            Returns the file ID on success, or an error if the file does not exist.
+            Returns the file ID on success. Creates the file (and any parent directories)
+            if it does not already exist.
             The knowledge graph is rebuilt automatically after the file is saved.
             """)
     public String update_md_file(String file_id,
@@ -242,10 +244,15 @@ public class MemoLinkMcpTools {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
         try {
+            List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wiki_links);
             Files.createDirectories(target.getParent());
-            Files.writeString(target, noteTemplateService.render(title, body, tags, wiki_links, metadata),
+            Files.writeString(target, noteTemplateService.render(title, body, tags, allLinks, metadata),
                     StandardOpenOption.TRUNCATE_EXISTING);
-            return "Updated: " + normalizedId;
+            String autoLinked = allLinks.stream()
+                    .filter(l -> wiki_links == null || !wiki_links.contains(l))
+                    .collect(Collectors.joining(", "));
+            return "Updated: " + normalizedId +
+                    (autoLinked.isBlank() ? "" : " (auto-linked: " + autoLinked + ")");
         } catch (IOException e) {
             return "Failed to update file: " + e.getMessage();
         }
