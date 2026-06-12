@@ -163,18 +163,40 @@ public class MdFileParserService {
 
     /**
      * Normalise a wiki link target to the note ID format: lower-kebab-case + ".md".
-     * e.g. "Spring Boot" → "spring-boot.md"
+     * Supports subdirectory paths separated by {@code /}, e.g.
+     * {@code "agents/My Note"} → {@code "agents/my-note.md"}.
+     *
+     * <p>Each path segment is independently normalised to kebab-case. Directory
+     * traversal ({@code ..}) is rejected by removing any such segments silently.
+     *
+     * Examples:
+     * <ul>
+     *   <li>{@code "Spring Boot"}              → {@code "spring-boot.md"}</li>
+     *   <li>{@code "agents/My Note"}            → {@code "agents/my-note.md"}</li>
+     *   <li>{@code "skills/java/spring-ai.md"} → {@code "skills/java/spring-ai.md"}</li>
+     * </ul>
      */
     public static String normalizeMdFileId(String raw) {
-        String normalized = raw.trim()
-                .toLowerCase()
-                .replaceAll("[^a-z0-9.-]+", "-")
-                .replaceAll("-+", "-")
-                .replaceAll("^-|-$", "");
-        if (!normalized.endsWith(".md")) {
-            normalized = normalized + ".md";
+        if (raw == null) return "untitled.md";
+        // Split on forward or backward slashes to support subdirectory paths
+        String[] parts = raw.trim().split("[/\\\\]+");
+        List<String> segments = new java.util.ArrayList<>();
+        for (String part : parts) {
+            // Reject traversal segments silently
+            if (part.equals(".") || part.equals("..") || part.isBlank()) continue;
+            String seg = part.toLowerCase()
+                    .replaceAll("[^a-z0-9.-]+", "-")
+                    .replaceAll("-+", "-")
+                    .replaceAll("^-|-$", "");
+            if (!seg.isBlank()) segments.add(seg);
         }
-        return normalized;
+        if (segments.isEmpty()) return "untitled.md";
+        // Last segment gets the .md extension
+        String last = segments.get(segments.size() - 1);
+        if (!last.endsWith(".md")) {
+            segments.set(segments.size() - 1, last + ".md");
+        }
+        return String.join("/", segments);
     }
 
     /**

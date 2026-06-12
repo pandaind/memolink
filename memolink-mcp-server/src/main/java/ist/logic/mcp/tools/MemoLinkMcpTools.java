@@ -207,7 +207,7 @@ public class MemoLinkMcpTools {
         }
         try {
             List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wiki_links);
-            Files.createDirectories(vaultDir);
+            Files.createDirectories(target.getParent());
             Files.writeString(target, noteTemplateService.render(title, body, tags, allLinks, metadata),
                     StandardOpenOption.CREATE_NEW);
             String autoLinked = allLinks.stream()
@@ -241,10 +241,8 @@ public class MemoLinkMcpTools {
                                  Map<String, String> metadata) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
-        if (!Files.exists(target)) {
-            return "File not found: " + normalizedId + ". Use create_md_file to create it.";
-        }
         try {
+            Files.createDirectories(target.getParent());
             Files.writeString(target, noteTemplateService.render(title, body, tags, wiki_links, metadata),
                     StandardOpenOption.TRUNCATE_EXISTING);
             return "Updated: " + normalizedId;
