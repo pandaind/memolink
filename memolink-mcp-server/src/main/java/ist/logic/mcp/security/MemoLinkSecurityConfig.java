@@ -62,11 +62,11 @@ public class MemoLinkSecurityConfig {
                 // Health/actuator endpoints are public
                 .requestMatchers("/actuator/health").permitAll()
 
-                // SSE stream (GET) — needs READ
-                .requestMatchers(HttpMethod.GET,  "/mcp/**").hasRole("READ")
-
-                // Tool invocations / mutations (POST) — needs WRITE
-                .requestMatchers(HttpMethod.POST, "/mcp/**").hasRole("WRITE")
+                // Streamable HTTP — GET opens SSE session or polls, POST invokes tools
+                .requestMatchers(HttpMethod.GET,    "/mcp").hasRole("READ")
+                .requestMatchers(HttpMethod.POST,   "/mcp").hasRole("WRITE")
+                // DELETE terminates a session — allow READ-level clients to disconnect
+                .requestMatchers(HttpMethod.DELETE, "/mcp").hasRole("READ")
 
                 // Everything else requires at least READ
                 .anyRequest().hasRole("READ")

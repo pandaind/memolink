@@ -59,6 +59,16 @@ public class GraphSearchService implements Closeable {
                 doc.add(new TextField("content",    note.getContent(), Field.Store.NO));
                 doc.add(new TextField("tags",       String.join(" ", note.getTags()),     Field.Store.NO));
                 doc.add(new TextField("headings",   String.join(" ", note.getHeadings()), Field.Store.NO));
+                // Index folder path segments so agents can search by folder/directory name.
+                // e.g. note ID "skills/java/spring-ai.md" → folder field "skills java"
+                String noteId = note.getId();
+                int lastSlash = noteId.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    String folderPath = noteId.substring(0, lastSlash)
+                            .replace('/', ' ')
+                            .replace('-', ' ');
+                    doc.add(new TextField("folder", folderPath, Field.Store.NO));
+                }
                 // Metadata ranking boost stored for retrieval
                 doc.add(new StoredField("importance",   note.getImportance()));
                 doc.add(new StoredField("accessCount",  note.getAccessCount()));
@@ -89,9 +99,10 @@ public class GraphSearchService implements Closeable {
             "title",    3.0f,
             "headings", 2.0f,
             "tags",     2.0f,
+            "folder",   2.0f,
             "content",  1.0f
         );
-        String[] fields = {"title", "headings", "tags", "content"};
+        String[] fields = {"title", "headings", "tags", "folder", "content"};
         Query parsedQuery = buildKeywordQuery(query, fields, boosts);
         TopDocs topDocs = searcher.search(parsedQuery, maxResults);
         List<SearchResult> results = new ArrayList<>(topDocs.scoreDocs.length);

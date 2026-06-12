@@ -1,15 +1,24 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MemoLink MCP Server — HTTP/SSE profile
+# MemoLink MCP Server — Streamable HTTP profile  (Spring AI 2.0.0+ / Tomcat)
 #
 # Activate with:  --spring.profiles.active=http
 # or env var:     SPRING_PROFILES_ACTIVE=http
 #
-# VS Code mcp.json for this mode:
+# VS Code / Cursor mcp.json for this mode:
 #   {
-#     "memolink-http": {
-#       "type": "sse",
-#       "url": "http://localhost:8765/mcp/sse",
+#     "memolink": {
+#       "type": "http",
+#       "url": "http://localhost:8765/mcp",
 #       "headers": { "X-API-Key": "sk-vscode-changeme" }
+#     }
+#   }
+#
+# Claude Desktop mcp.json (read-only):
+#   {
+#     "memolink": {
+#       "type": "http",
+#       "url": "http://localhost:8765/mcp",
+#       "headers": { "X-API-Key": "sk-claude-changeme" }
 #     }
 #   }
 # ─────────────────────────────────────────────────────────────────────────────
@@ -18,15 +27,28 @@ spring:
     web-application-type: servlet   # switch ON the web server
     banner-mode: off
 
+  # ── Virtual threads (Java 21+) ──────────────────────────────────────────────
+  # Tomcat request handlers run on virtual threads — eliminates thread-pool
+  # bottlenecks during blocking I/O (file writes, ONNX inference, Lucene search).
+  threads:
+    virtual:
+      enabled: true
+
   ai:
     mcp:
       server:
-        type: SYNC                  # Spring AI WebMVC uses SYNC over HTTP
-        sse-endpoint: /mcp/sse      # override default /sse → match mcp.json
-        sse-message-endpoint: /mcp/message
+        type: SYNC                  # SYNC suits Spring MVC / Tomcat
+        protocol: STREAMABLE        # Streamable HTTP replaces legacy SSE transport
+
+        # ── Streamable HTTP settings ─────────────────────────────────────────
+        streamable-http:
+          mcp-endpoint: /mcp        # single unified endpoint for all MCP traffic
+          keep-alive-interval: 20s  # built-in ping every 20 s — prevents proxy timeouts
 
 server:
   port: ${MEMOLINK_HTTP_PORT:8765}
+
+
 
 # ── Authentication ────────────────────────────────────────────────────────────
 memolink:

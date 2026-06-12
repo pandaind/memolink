@@ -35,8 +35,6 @@ public class EmbeddingService implements Closeable {
 
     public  static final int  DIMENSIONS = 384;
     private static final int  MAX_SEQ    = 512;
-    private static final long WAIT_MS    = 120_000;
-    private static final long POLL_MS    = 500;
 
     private volatile BertTokenizer tokenizer;
     private volatile OrtEnvironment ortEnv;
@@ -57,15 +55,9 @@ public class EmbeddingService implements Closeable {
         Path onnxFile = modelDir.resolve("model.onnx");
 
         loadFuture = CompletableFuture.runAsync(() -> {
-            long deadline = System.currentTimeMillis() + WAIT_MS;
-            while (!Files.exists(onnxFile) || isIncomplete(onnxFile)) {
-                if (System.currentTimeMillis() > deadline) {
-                    log.warn("Timed out waiting for model.onnx at {} — semantic search disabled.", onnxFile);
-                    return;
-                }
-                try { Thread.sleep(POLL_MS); } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt(); return;
-                }
+            if (!Files.exists(onnxFile)) {
+                log.warn("Model file not found at {} — semantic search disabled.", onnxFile);
+                return;
             }
 
             try {
@@ -192,10 +184,5 @@ public class EmbeddingService implements Closeable {
         float norm = (float) Math.sqrt(sumSq);
         if (norm > 1e-9f) for (int i = 0; i < v.length; i++) v[i] /= norm;
         return v;
-    }
-
-    private static boolean isIncomplete(Path file) {
-        try { return Files.size(file) < 1_000_000L; }
-        catch (IOException e) { return true; }
     }
 }

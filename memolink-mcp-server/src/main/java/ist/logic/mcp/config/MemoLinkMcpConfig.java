@@ -43,12 +43,18 @@ public class MemoLinkMcpConfig {
     }
 
     @Bean
-    public GraphHolder graphHolder(EmbeddingService embeddingService) throws IOException {
+    public GraphBuilderService graphBuilderService() {
+        return new GraphBuilderService();
+    }
+
+    @Bean
+    public GraphHolder graphHolder(GraphBuilderService builder,
+                                   EmbeddingService embeddingService) throws IOException {
         // Wait for the ONNX model to finish loading before building the graph so
         // that embedAll() can compute and store vector embeddings for every note.
         embeddingService.awaitReady(60_000);
         Path rootDir = Path.of(vaultDir).toAbsolutePath();
-        KnowledgeGraph graph = new GraphBuilderService().build(rootDir, embeddingService);
+        KnowledgeGraph graph = builder.build(rootDir, embeddingService);
         GraphSearchService searchService = new GraphSearchService();
         searchService.index(graph.getAllMdFiles());
         return new GraphHolder(graph, searchService);
@@ -56,9 +62,9 @@ public class MemoLinkMcpConfig {
 
     @Bean(destroyMethod = "close")
     public GraphWatchService graphWatchService(GraphHolder holder,
+                                               GraphBuilderService builder,
                                                EmbeddingService embeddingService) throws IOException {
         Path rootDir = Path.of(vaultDir).toAbsolutePath();
-        GraphBuilderService builder = new GraphBuilderService();
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(

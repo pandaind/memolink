@@ -31,11 +31,15 @@ public class GraphBuilderService {
     private final MdFileParserService  parser  = new MdFileParserService();
     private final RelationshipEngine   engine  = new RelationshipEngine();
 
+    /** Set during {@link #build}; used by incremental rebuilds to compute relative-path IDs. */
+    private volatile Path rootDir;
+
     public KnowledgeGraph build(Path rootDir) throws IOException {
         return build(rootDir, null);
     }
 
     public KnowledgeGraph build(Path rootDir, EmbeddingService embeddingService) throws IOException {
+        this.rootDir = rootDir;   // remember for incremental rebuilds
         log.info("Scanning md files in: {}", rootDir.toAbsolutePath());
         List<Path> paths = scanner.scan(rootDir);
         log.info("Found {} md files", paths.size());
@@ -43,7 +47,7 @@ public class GraphBuilderService {
         List<MdFileMetadata> files = new ArrayList<>(paths.size());
         for (Path path : paths) {
             try {
-                files.add(parser.parse(path));
+                files.add(parser.parse(path, rootDir));
             } catch (IOException e) {
                 log.warn("Skipping unreadable file {}: {}", path, e.getMessage());
             }
@@ -70,10 +74,15 @@ public class GraphBuilderService {
         }
 
         for (Path path : changedPaths) {
-            String id = path.getFileName().toString();
+            // Use relative path as ID, falling back to filename if rootDir not yet set
+            String id = rootDir != null
+                    ? rootDir.relativize(path).toString().replace(java.io.File.separatorChar, '/')
+                    : path.getFileName().toString();
             if (Files.exists(path)) {
                 try {
-                    MdFileMetadata updated = parser.parse(path);
+                    MdFileMetadata updated = rootDir != null
+                            ? parser.parse(path, rootDir)
+                            : parser.parse(path);
                     fileMap.put(updated.getId(), updated);
                 } catch (IOException e) {
                     log.warn("Skipping unreadable file {}: {}", path, e.getMessage());
@@ -86,7 +95,9 @@ public class GraphBuilderService {
         List<MdFileMetadata> files = new ArrayList<>(fileMap.values());
         // Only embed newly-changed files (carry existing embeddings forward)
         List<MdFileMetadata> needsEmbed = changedPaths.stream()
-                .map(p -> p.getFileName().toString())
+                .map(p -> rootDir != null
+                        ? rootDir.relativize(p).toString().replace(java.io.File.separatorChar, '/')
+                        : p.getFileName().toString())
                 .map(fileMap::get)
                 .filter(m -> m != null && !m.hasEmbedding())
                 .toList();

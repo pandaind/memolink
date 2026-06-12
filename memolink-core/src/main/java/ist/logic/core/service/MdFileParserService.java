@@ -58,7 +58,30 @@ public class MdFileParserService {
         this.parser = Parser.builder(options).build();
     }
 
+    /**
+     * Parse a markdown file using just its filename as the note ID.
+     * Use {@link #parse(Path, Path)} when the vault root is known to get full
+     * relative-path IDs (e.g. {@code skills/java/spring-ai.md}).
+     */
     public MdFileMetadata parse(Path filePath) throws IOException {
+        return parseWithId(filePath, filePath.getFileName().toString());
+    }
+
+    /**
+     * Parse a markdown file and derive its ID as the relative path from
+     * {@code vaultRoot} (forward-slash separated, e.g. {@code agents/note.md}).
+     *
+     * @param filePath  absolute path to the {@code .md} file
+     * @param vaultRoot absolute path to the vault root directory
+     */
+    public MdFileMetadata parse(Path filePath, Path vaultRoot) throws IOException {
+        String id = vaultRoot.relativize(filePath)
+                .toString()
+                .replace(java.io.File.separatorChar, '/');
+        return parseWithId(filePath, id);
+    }
+
+    private MdFileMetadata parseWithId(Path filePath, String id) throws IOException {
         String content = Files.readString(filePath);
         String fileName = filePath.getFileName().toString();
         String title = deriveTitle(fileName, content);
@@ -97,7 +120,7 @@ public class MdFileParserService {
         Set<String> tags     = extractTags(content);
         Set<String> keywords = extractKeywords(content);
 
-        MdFileMetadata meta = new MdFileMetadata(fileName, title, content, filePath,
+        MdFileMetadata meta = new MdFileMetadata(id, title, content, filePath,
                 wikiLinks, wikiLinkTypes, tags, keywords, headings);
 
         // Read importance from YAML frontmatter if present

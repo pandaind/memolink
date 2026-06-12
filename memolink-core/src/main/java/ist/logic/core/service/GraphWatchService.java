@@ -59,16 +59,15 @@ public class GraphWatchService implements Closeable {
         this.onChanged = onChanged;
 
         this.watchService = FileSystems.getDefault().newWatchService();
+        // Debouncer stays as a platform thread — ScheduledExecutorService doesn't
+        // support virtual threads, and it only schedules (no blocking I/O).
         this.debouncer    = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "memolink-debouncer");
             t.setDaemon(true);
             return t;
         });
-        this.watchThread  = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "memolink-watcher");
-            t.setDaemon(true);
-            return t;
-        });
+        // Watch loop uses a virtual thread — ideal because WatchService.take() blocks
+        this.watchThread  = Executors.newVirtualThreadPerTaskExecutor();
 
         registerAll(rootDir);
         watchThread.submit(this::watchLoop);

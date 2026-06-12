@@ -5,10 +5,10 @@
 # Architecture:
 #
 #   LLM Client (Claude Desktop / VS Code / Cursor)
-#        │  HTTP/SSE  → localhost:8765
+#        │  Streamable HTTP  → localhost:8765
 #        ▼
 #   ┌─────────────────────────────┐
-#   │  memolink-mcp-server :8765  │  Java · Spring Boot HTTP/SSE mode
+#   │  memolink-mcp-server :8765  │  Java · Spring Boot / Undertow
 #   │  (HeadroomCompressionService│
 #   │   compresses tool outputs)  │
 #   └──────────────┬──────────────┘
@@ -25,7 +25,7 @@
 #   docker compose up --build
 #
 # LLM client config (VS Code mcp.json):
-#   { "memolink": { "type": "sse", "url": "http://localhost:8765/mcp/sse",
+#   { "memolink": { "type": "http", "url": "http://localhost:8765/mcp",
 #                   "headers": { "X-API-Key": "sk-vscode-changeme" } } }
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ services:
     environment:
       # Vault directory (bind-mounted from host)
       MEMOLINK_VAULT_DIR: /vault
-      # Spring profile — must be 'http' for HTTP/SSE transport
+      # Spring profile — must be 'http' for Streamable HTTP transport
       SPRING_PROFILES_ACTIVE: http
       MEMOLINK_HTTP_PORT: "8765"
 
@@ -80,6 +80,10 @@ services:
       MEMOLINK_KEY_VSCODE: ${MEMOLINK_KEY_VSCODE:-sk-vscode-changeme}
       MEMOLINK_KEY_CLAUDE: ${MEMOLINK_KEY_CLAUDE:-sk-claude-changeme}
       MEMOLINK_KEY_CI:     ${MEMOLINK_KEY_CI:-sk-ci-changeme}
+    
+    # Keep stdin open so the Spring AI STDIO transport doesn't detect EOF and shut down the JVM
+    stdin_open: true
+    tty: true
     ports:
       # LLM clients connect here
       - "${MEMOLINK_HOST_PORT:-8765}:8765"

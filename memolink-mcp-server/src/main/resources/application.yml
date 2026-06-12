@@ -38,6 +38,11 @@ spring:
     # Banner and stdout logging must be off — MCP uses stdout for JSON-RPC
     banner-mode: off
     log-startup-info: false
+  # Virtual threads (Java 21+) — reduces thread-pool bottlenecks during
+  # blocking I/O (ONNX inference, file writes, WatchService, Lucene indexing)
+  threads:
+    virtual:
+      enabled: true
   ai:
     mcp:
       server:

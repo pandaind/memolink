@@ -73,7 +73,7 @@ public class MemoLinkMcpTools {
             Returns ranked results with id, title, and relevance score.
             Higher score means more relevant. Matches conceptually related
             content and includes exact-keyword fallbacks and metadata ranking.
-            """)
+            """, returnDirect = true)
     public List<SearchResult> search_md_files(String query) {
         try {
             return holder.getSearchService().hybridSearch(
@@ -94,7 +94,7 @@ public class MemoLinkMcpTools {
     @Tool(description = """
             Get the structured content of an md file by its ID (e.g. "spring.md").
             Returns title, tags, headings, wiki links, and body prose — not raw markdown.
-            """)
+            """, returnDirect = true)
     public NoteDetail get_md_file(String file_id) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
         if (mdFile == null) return null;
@@ -121,7 +121,7 @@ public class MemoLinkMcpTools {
             List all md file IDs currently in the knowledge graph.
             Returns every file ID, e.g. ["spring-boot.md", "kafka.md"].
             Useful for browsing the full vault before deciding what to read or edit.
-            """)
+            """, returnDirect = true)
     public List<String> list_md_files() {
         return holder.getGraph().getAllMdFiles().stream()
                 .map(MdFileMetadata::getId)
@@ -153,7 +153,7 @@ public class MemoLinkMcpTools {
             This gives GraphRAG-style context: the matched note PLUS its immediate
             knowledge neighbourhood in one call.
             file_id : the note to expand, e.g. "spring-ai.md".
-            """)
+            """, returnDirect = true)
     public GraphContextResult get_graph_context(String file_id) {
         MdFileMetadata m = holder.getGraph().getMdFile(file_id);
         if (m != null) m.recordAccess();
@@ -308,7 +308,7 @@ public class MemoLinkMcpTools {
             Returns a summary of the knowledge graph: total note count, top tags,
             most-connected notes, notes by importance, and embedding availability.
             Use this to orient yourself before searching or editing.
-            """)
+            """, returnDirect = true)
     public Map<String, Object> get_memory_summary() {
         var graph = holder.getGraph();
         var allNotes = graph.getAllMdFiles();
