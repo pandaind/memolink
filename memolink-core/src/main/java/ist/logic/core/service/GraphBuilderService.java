@@ -14,6 +14,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Orchestrates the full pipeline:
@@ -30,6 +34,17 @@ public class GraphBuilderService {
     private final MdFileScannerService scanner = new MdFileScannerService();
     private final MdFileParserService  parser  = new MdFileParserService();
     private final RelationshipEngine   engine  = new RelationshipEngine();
+    private final ObjectMapper         mapper  = new ObjectMapper();
+
+    public static class CacheEntry {
+        public long lastModified;
+        public float[] embedding;
+        public CacheEntry() {}
+        public CacheEntry(long lastModified, float[] embedding) {
+            this.lastModified = lastModified;
+            this.embedding = embedding;
+        }
+    }
 
     /** Set during {@link #build}; used by incremental rebuilds to compute relative-path IDs. */
     private volatile Path rootDir;
@@ -114,13 +129,68 @@ public class GraphBuilderService {
 
     private void embedAll(List<MdFileMetadata> files, EmbeddingService embeddingService) {
         if (embeddingService == null || !embeddingService.isAvailable()) return;
-        int count = 0;
-        for (MdFileMetadata m : files) {
-            if (!m.hasEmbedding()) {
-                float[] emb = embeddingService.embedNote(m.getTitle(), m.getContent());
-                if (emb != null) { m.setEmbedding(emb); count++; }
+        
+        Path cacheFile = null;
+        if (rootDir != null) {
+            Path memolinkDir = rootDir.resolve(".memolink");
+            try {
+                if (!Files.exists(memolinkDir)) Files.createDirectories(memolinkDir);
+                cacheFile = memolinkDir.resolve("embeddings.json");
+            } catch (IOException e) {
+                log.warn("Could not create .memolink directory for caching: {}", e.getMessage());
             }
         }
-        if (count > 0) log.info("Computed {} embeddings", count);
+
+        Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
+        if (cacheFile != null && Files.exists(cacheFile)) {
+            try {
+                Map<String, CacheEntry> loaded = mapper.readValue(cacheFile.toFile(), 
+                        new TypeReference<Map<String, CacheEntry>>() {});
+                if (loaded != null) cache.putAll(loaded);
+                log.info("Loaded {} cached embeddings", cache.size());
+            } catch (IOException e) {
+                log.warn("Failed to read embeddings cache, will rebuild: {}", e.getMessage());
+            }
+        }
+
+        int count = 0;
+        int cachedCount = 0;
+        boolean cacheUpdated = false;
+
+        for (MdFileMetadata m : files) {
+            if (!m.hasEmbedding()) {
+                String id = m.getId();
+                long lastMod = 0;
+                try {
+                    lastMod = Files.getLastModifiedTime(m.getFilePath()).toMillis();
+                } catch (IOException ignored) {}
+
+                CacheEntry entry = cache.get(id);
+                if (entry != null && entry.lastModified >= lastMod && entry.embedding != null) {
+                    m.setEmbedding(entry.embedding);
+                    cachedCount++;
+                } else {
+                    float[] emb = embeddingService.embedNote(m.getTitle(), m.getContent());
+                    if (emb != null) { 
+                        m.setEmbedding(emb); 
+                        cache.put(id, new CacheEntry(lastMod, emb));
+                        cacheUpdated = true;
+                        count++; 
+                    }
+                }
+            }
+        }
+        
+        if (cachedCount > 0) log.info("Reused {} cached embeddings", cachedCount);
+        if (count > 0) log.info("Computed {} new embeddings", count);
+
+        if (cacheUpdated && cacheFile != null) {
+            try {
+                mapper.writeValue(cacheFile.toFile(), cache);
+                log.info("Saved embeddings cache to disk");
+            } catch (IOException e) {
+                log.warn("Failed to write embeddings cache: {}", e.getMessage());
+            }
+        }
     }
 }

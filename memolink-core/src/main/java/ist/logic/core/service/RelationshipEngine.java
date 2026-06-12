@@ -24,6 +24,9 @@ public class RelationshipEngine {
     public static final int WIKI_LINK_WEIGHT      = 5;
     public static final int SHARED_TAG_WEIGHT     = 2;
     public static final int SHARED_KEYWORD_WEIGHT = 1;
+    
+    // Prevent O(N^2) explosion on generic tags/keywords used by thousands of notes.
+    public static final int MAX_BUCKET_SIZE       = 500;
 
     public List<GraphEdge> buildEdges(List<MdFileMetadata> notes) {
         // Index notes by ID for quick lookup
@@ -102,6 +105,8 @@ public class RelationshipEngine {
                                  Map<String, Map<String, Integer>> pairReasonCount) {
         int n = bucket.size();
         if (n < 2) return;
+        if (n > MAX_BUCKET_SIZE) return; // Skip generic tags to save memory and CPU
+        
         for (int i = 0; i < n; i++) {
             for (int j = i + 1; j < n; j++) {
                 String key = pairKey(bucket.get(i), bucket.get(j));
