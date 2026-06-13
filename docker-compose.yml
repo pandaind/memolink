@@ -69,6 +69,18 @@ services:
       SPRING_PROFILES_ACTIVE: http
       MEMOLINK_HTTP_PORT: "8765"
 
+      # ── JVM memory tuning ─────────────────────────────────────────────────
+      # -Xmx768m  : cap heap at 768 MB (leaves ~256 MB for off-heap: Lucene,
+      #             ONNX Runtime native buffers, Netty direct memory, etc.)
+      # G1GC      : low-pause collector; MaxGCPauseMillis keeps GC < 200 ms
+      # +ExitOnOutOfMemoryError : crash fast & let Docker restart the container
+      #             rather than limping with a broken JVM after an OOM
+      JAVA_TOOL_OPTIONS: >-
+        -Xmx768m
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:+ExitOnOutOfMemoryError
+
       # ── Headroom integration ──────────────────────────────────────────────
       # URL of the headroom sidecar on the internal Docker network
       HEADROOM_URL:       http://headroom:8787
@@ -96,3 +108,7 @@ services:
         condition: service_healthy     # wait until kompress model is fully loaded
         required: false                # allow starting without headroom
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g                   # hard ceiling — JVM heap (768m) + off-heap overhead
