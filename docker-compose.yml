@@ -42,7 +42,7 @@ services:
         KOMPRESS_MODEL_ID: ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
     environment:
       KOMPRESS_MODEL_ID:   ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
-      KOMPRESS_THRESHOLD:  ${KOMPRESS_THRESHOLD:-0.7}
+      KOMPRESS_THRESHOLD:  ${KOMPRESS_THRESHOLD:-0.5}
       KOMPRESS_CHUNK_WORDS: ${KOMPRESS_CHUNK_WORDS:-350}
       HEADROOM_KOMPRESS_BACKEND: pytorch
       # Limit ONNX internal thread pools to avoid CPU contention in containers
@@ -102,7 +102,7 @@ services:
     volumes:
       # Bind-mount your vault directory.  Set VAULT_DIR in .env or inline:
       #   VAULT_DIR=/Users/you/obsidian-vault docker compose up
-      - ${VAULT_DIR:-${PWD}/vault}:/vault:rw
+      - ${VAULT_DIR:-./vault}:/vault:rw
     depends_on:
       headroom:
         condition: service_healthy     # wait until kompress model is fully loaded
