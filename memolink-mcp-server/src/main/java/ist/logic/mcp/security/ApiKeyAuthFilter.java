@@ -73,7 +73,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
         String path = request.getRequestURI();
-        return "/actuator/health".equals(path) || "/actuator/health/".equals(path);
+        return path != null && path.startsWith("/actuator/");
     }
 
     @Override

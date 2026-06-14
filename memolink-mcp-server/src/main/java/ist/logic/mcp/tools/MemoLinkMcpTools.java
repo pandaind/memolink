@@ -11,6 +11,7 @@ import ist.logic.core.service.MdFileParserService;
 import ist.logic.mcp.service.HeadroomCompressionService;
 import ist.logic.mcp.template.NoteTemplateService;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -194,6 +195,7 @@ public class MemoLinkMcpTools {
             Related existing notes are discovered automatically and added to the wiki-links.
             The knowledge graph is rebuilt automatically after the file is saved.
             """)
+    @PreAuthorize("hasRole('WRITE')")
     public String create_md_file(String file_id,
                                  String title,
                                  String body,
@@ -235,6 +237,7 @@ public class MemoLinkMcpTools {
             if it does not already exist.
             The knowledge graph is rebuilt automatically after the file is saved.
             """)
+    @PreAuthorize("hasRole('WRITE')")
     public String update_md_file(String file_id,
                                  String title,
                                  String body,
@@ -264,6 +267,7 @@ public class MemoLinkMcpTools {
             Returns the file ID on success, or an error if the file does not exist.
             The knowledge graph is rebuilt automatically after deletion.
             """)
+    @PreAuthorize("hasRole('WRITE')")
     public String delete_md_file(String file_id) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
@@ -286,6 +290,7 @@ public class MemoLinkMcpTools {
             file_id    : the note to update, e.g. "spring-ai.md".
             importance : integer 0–10 (0 = unset, 10 = most important).
             """)
+    @PreAuthorize("hasRole('WRITE')")
     public String set_note_importance(String file_id, int importance) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         MdFileMetadata m = holder.getGraph().getMdFile(normalizedId);
