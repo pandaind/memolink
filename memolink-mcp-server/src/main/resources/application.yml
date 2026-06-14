@@ -29,6 +29,11 @@ memolink:
     min-chars:       ${HEADROOM_MIN_CHARS:300}
     timeout-seconds: ${HEADROOM_TIMEOUT_SECONDS:30}
 
+  # ── Token Saving: Stop Word Filter ───────────────────────────────────────
+  stop-words:
+    enabled: false
+    words: a,an,and,are,as,at,be,but,by,for,if,in,into,is,it,no,not,of,on,or,such,that,the,their,then,there,these,they,this,to,was,will,with
+
 spring:
   application:
     name: memolink-mcp-server

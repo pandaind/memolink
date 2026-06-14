@@ -63,10 +63,10 @@ public class MemoLinkSecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()
 
                 // Streamable HTTP — GET opens SSE session or polls, POST invokes tools
-                .requestMatchers(HttpMethod.GET,    "/mcp").hasRole("READ")
-                .requestMatchers(HttpMethod.POST,   "/mcp").hasRole("WRITE")
+                .requestMatchers(HttpMethod.GET,    "/mcp", "/mcp/**").hasRole("READ")
+                .requestMatchers(HttpMethod.POST,   "/mcp", "/mcp/**").hasAnyRole("READ", "WRITE")
                 // DELETE terminates a session — allow READ-level clients to disconnect
-                .requestMatchers(HttpMethod.DELETE, "/mcp").hasRole("READ")
+                .requestMatchers(HttpMethod.DELETE, "/mcp", "/mcp/**").hasAnyRole("READ", "WRITE")
 
                 // Everything else requires at least READ
                 .anyRequest().hasRole("READ")
