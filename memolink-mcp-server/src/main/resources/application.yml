@@ -29,6 +29,20 @@ memolink:
     min-chars:       ${HEADROOM_MIN_CHARS:300}
     timeout-seconds: ${HEADROOM_TIMEOUT_SECONDS:30}
 
+  # ── Token Saving: Stop Word Filter ───────────────────────────────────────
+  stop-words:
+    enabled: false
+    words: a,an,and,are,as,at,be,but,by,for,if,in,into,is,it,no,not,of,on,or,such,that,the,their,then,there,these,they,this,to,was,will,with
+
+  # ── Token Saving: Native Handoff ─────────────────────────────────────────
+  mcp:
+    native-handoff:
+      enabled: true
+      dir: ${MEMOLINK_VAULT_DIR:${user.home}/vault}/.cache
+      # If running in Docker, the IDE needs the absolute path on the HOST machine.
+      # If host-dir is provided, it will be used in the handoff message instead of 'dir'.
+      host-dir: ${MEMOLINK_VAULT_HOST_DIR:}
+
 spring:
   application:
     name: memolink-mcp-server

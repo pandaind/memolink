@@ -9,6 +9,8 @@ import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.MdFileParserService;
 import ist.logic.mcp.service.HeadroomCompressionService;
+import ist.logic.mcp.service.NativeHandoffService;
+import ist.logic.mcp.service.StopWordFilterService;
 import ist.logic.mcp.template.NoteTemplateService;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -54,147 +56,163 @@ public class MemoLinkMcpTools {
     private final NoteTemplateService       noteTemplateService;
     private final EmbeddingService          embeddingService;
     private final HeadroomCompressionService headroomService;
+    private final StopWordFilterService     stopWordFilterService;
+    private final NativeHandoffService      nativeHandoffService;
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
                            Path mdGraphVaultDir,
                            NoteTemplateService noteTemplateService,
                            EmbeddingService embeddingService,
-                           HeadroomCompressionService headroomService) {
+                           HeadroomCompressionService headroomService,
+                           StopWordFilterService stopWordFilterService,
+                           NativeHandoffService nativeHandoffService) {
         this.holder               = holder;
         this.traversalService     = traversalService;
         this.vaultDir             = mdGraphVaultDir;
         this.noteTemplateService  = noteTemplateService;
         this.embeddingService     = embeddingService;
         this.headroomService      = headroomService;
+        this.stopWordFilterService = stopWordFilterService;
+        this.nativeHandoffService = nativeHandoffService;
     }
 
-    @Tool(description = """
-            Search md files using semantic vector search by default.
-            Returns ranked results with id, title, and relevance score.
-            Higher score means more relevant. Matches conceptually related
-            content and includes exact-keyword fallbacks and metadata ranking.
-            """, returnDirect = true)
-    public List<SearchResult> search_md_files(String query) {
+    @Tool(description = "Search md files via semantic search. Returns matching file IDs, titles, and excerpts.")
+    public String search_md_files(String query) {
         try {
-            return holder.getSearchService().hybridSearch(
-                    query, embeddingService, 10, holder.getGraph()::getMdFile);
+            return formatSearchResults(holder.getSearchService().hybridSearch(
+                    query, embeddingService, 10, holder.getGraph()::getMdFile));
         } catch (IOException e) {
-            return List.of();
+            return "Error searching files: " + e.getMessage();
         }
     }
 
-    @Tool(description = """
-            Get md files related to a given md file via knowledge graph traversal.
-            Returns a list of related md file IDs (up to depth=2, top-5 per level).
-            """)
-    public List<String> get_related_md_files(String file_id) {
-        return traversalService.traverse(holder.getGraph(), file_id, 2, 5, 3);
+    @Tool(description = "Get related md file IDs via graph traversal up to depth 2.")
+    public String get_related_md_files(String file_id) {
+        return formatStringList(traversalService.traverse(holder.getGraph(), file_id, 2, 5, 3));
     }
 
-    @Tool(description = """
-            Get the structured content of an md file by its ID (e.g. "spring.md").
-            Returns title, tags, headings, wiki links, and body prose — not raw markdown.
-            """, returnDirect = true)
-    public NoteDetail get_md_file(String file_id) {
+    @Tool(description = "Get full markdown content, tags, and links for a file by its ID.")
+    public String get_md_file(String file_id) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
-        if (mdFile == null) return null;
+        if (mdFile == null) return "File not found.";
         mdFile.recordAccess();   // Capability 5: metadata ranking
         NoteDetail detail = NoteDetail.from(mdFile);
+        
+        // Strip stop words first
+        String strippedBody = stopWordFilterService.strip(detail.body());
+        
         // Compress the body via headroom sidecar; falls back to original on error
-        String compressedBody = headroomService.compress(detail.body());
-        if (compressedBody == detail.body()) return detail;   // unchanged — return as-is
-        return new NoteDetail(
-                detail.id(), detail.title(), detail.tags(),
-                detail.headings(), detail.wikiLinks(), compressedBody);
+        String compressedBody = headroomService.compress(strippedBody);
+        
+        if (compressedBody != detail.body()) {
+            detail = new NoteDetail(
+                    detail.id(), detail.title(), detail.tags(),
+                    detail.headings(), detail.wikiLinks(), compressedBody);
+        }
+        String result = formatNoteDetail(detail);
+        return nativeHandoffService.handoff("get_md_file", file_id, result);
     }
 
-    @Tool(description = """
-            Traverse the knowledge graph from a starting md file.
-            depth: 1–3 (recommended: 2).
-            Returns connected md file IDs ordered by proximity.
-            """)
-    public List<String> traverse_graph(String file_id, int depth) {
-        return traversalService.traverse(holder.getGraph(), file_id, Math.min(depth, 3), 5, 2);
+    @Tool(description = "Traverse the graph from a file up to given depth (max 3). Returns connected file IDs.")
+    public String traverse_graph(String file_id, int depth) {
+        return formatStringList(traversalService.traverse(holder.getGraph(), file_id, Math.min(depth, 3), 5, 2));
     }
 
-    @Tool(description = """
-            List all md file IDs currently in the knowledge graph.
-            Returns every file ID, e.g. ["spring-boot.md", "kafka.md"].
-            Useful for browsing the full vault before deciding what to read or edit.
-            """, returnDirect = true)
-    public List<String> list_md_files() {
-        return holder.getGraph().getAllMdFiles().stream()
+    @Tool(description = "List all file IDs in the vault.")
+    public String list_md_files() {
+        return formatStringList(holder.getGraph().getAllMdFiles().stream()
                 .map(MdFileMetadata::getId)
                 .sorted()
-                .toList();
+                .toList());
     }
 
-    @Tool(description = """
-            Pure semantic (vector) search using sentence embeddings.
-            Use this when keyword search returns poor results or when you need
-            conceptually related content without exact keyword matches.
-            Requires the embedding model to be available; returns empty list otherwise.
-            Returns ranked results with id, title, and cosine similarity score.
-            """)
-    public List<SearchResult> semantic_search(String query) {
-        if (!embeddingService.isAvailable()) return List.of();
+
+    @Tool(description = "Get a specific heading section from an md file.")
+    public String get_md_file_section(String file_id, String heading) {
+        MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
+        if (mdFile == null) return "File not found.";
+        mdFile.recordAccess();
+        String content = mdFile.getContent();
+        
+        List<String> lines = content.lines().toList();
+        StringBuilder section = new StringBuilder();
+        boolean inSection = false;
+        int headingLevel = 0;
+        
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#")) {
+                int level = 0;
+                while (level < trimmed.length() && trimmed.charAt(level) == '#') {
+                    level++;
+                }
+                String currentHeading = trimmed.substring(level).trim();
+                
+                if (inSection) {
+                    if (level <= headingLevel) {
+                        break; // End of section
+                    }
+                } else if (currentHeading.equalsIgnoreCase(heading.trim())) {
+                    inSection = true;
+                    headingLevel = level;
+                    section.append(line).append("\n");
+                    continue;
+                }
+            }
+            if (inSection) {
+                section.append(line).append("\n");
+            }
+        }
+        
+        if (!inSection) {
+            return "Heading '" + heading + "' not found in file.";
+        }
+        
+        String extracted = section.toString().trim();
+        String stripped = stopWordFilterService.strip(extracted);
+        String result = headroomService.compress(stripped);
+        return nativeHandoffService.handoff("get_md_file_section", file_id, result);
+    }
+
+    @Tool(description = "Pure semantic vector search. Returns matching file IDs and excerpts.")
+    public String semantic_search(String query) {
+        if (!embeddingService.isAvailable()) return "Semantic search is disabled (model not available).";
         float[] qEmb = embeddingService.embed(query);
-        if (qEmb == null) return List.of();
+        if (qEmb == null) return "Failed to generate embedding for query.";
         try {
-            return holder.getSearchService().semanticSearch(qEmb, 10);
+            return formatSearchResults(holder.getSearchService().semanticSearch(qEmb, 10));
         } catch (IOException e) {
-            return List.of();
+            return "Error during semantic search: " + e.getMessage();
         }
     }
 
-    @Tool(description = """
-            Get a note's full content together with its 1-hop graph neighbours
-            and the typed relationship to each (e.g. uses, integrates_with, references).
-            This gives GraphRAG-style context: the matched note PLUS its immediate
-            knowledge neighbourhood in one call.
-            file_id : the note to expand, e.g. "spring-ai.md".
-            """, returnDirect = true)
-    public GraphContextResult get_graph_context(String file_id) {
+    @Tool(description = "Get a note's full content plus its 1-hop graph neighbors (GraphRAG context).")
+    public String get_graph_context(String file_id) {
         MdFileMetadata m = holder.getGraph().getMdFile(file_id);
         if (m != null) m.recordAccess();
         GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), file_id);
-        if (ctx == null) return null;
+        if (ctx == null) return "File not found in graph.";
         // Compress the focal note's body; neighbour summaries are already short
         String compressedBody = headroomService.compress(ctx.body());
-        if (compressedBody == ctx.body()) return ctx;   // unchanged
-        return new GraphContextResult(
-                ctx.id(), ctx.title(), ctx.tags(),
-                ctx.headings(), ctx.wikiLinks(), compressedBody,
-                ctx.neighbors());
+        if (compressedBody != ctx.body()) {
+            ctx = new GraphContextResult(
+                    ctx.id(), ctx.title(), ctx.tags(),
+                    ctx.headings(), ctx.wikiLinks(), compressedBody,
+                    ctx.neighbors());
+        }
+        String result = formatGraphContext(ctx);
+        return nativeHandoffService.handoff("get_graph_context", file_id, result);
     }
 
-    @Tool(description = """
-            Find the shortest path in the knowledge graph between two notes.
-            Returns the ordered list of note IDs on the path, inclusive of
-            from_id and to_id. Returns an empty list if no path exists.
-            Useful for understanding how two topics are connected.
-            from_id : starting note, e.g. "spring-ai.md".
-            to_id   : target note, e.g. "kafka.md".
-            """)
-    public List<String> find_path_between_notes(String from_id, String to_id) {
-        return traversalService.findPath(holder.getGraph(), from_id, to_id);
+    @Tool(description = "Find shortest path of connected notes between from_id and to_id.")
+    public String find_path_between_notes(String from_id, String to_id) {
+        List<String> path = traversalService.findPath(holder.getGraph(), from_id, to_id);
+        if (path.isEmpty()) return "No path found between " + from_id + " and " + to_id + ".";
+        return formatStringList(path);
     }
 
-    @Tool(description = """
-            Create a new markdown file in the notes directory.
-            file_id   : target filename, e.g. "my-note.md" (normalised to kebab-case automatically).
-            title     : note title rendered as the top-level H1 heading.
-            body      : main markdown content.
-            wiki_links: file IDs of related notes to link, e.g. ["spring-boot.md"].
-            tags      : tag names WITHOUT the # prefix, e.g. ["java", "spring"].
-            metadata  : optional key-value pairs written into the note frontmatter,
-                        e.g. {"source": "https://..."}. Configured fields are auto-discovered;
-                        "created" / "date" fields are auto-set to today if present in config.
-            Returns the normalised file ID on success, or an error if the file already exists.
-            Related existing notes are discovered automatically and added to the wiki-links.
-            The knowledge graph is rebuilt automatically after the file is saved.
-            """)
+    @Tool(description = "Create a new md file. Args: file_id, title, body, wiki_links, tags, metadata.")
     @PreAuthorize("hasRole('WRITE')")
     public String create_md_file(String file_id,
                                  String title,
@@ -222,21 +240,7 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = """
-            Update an existing markdown file in the notes directory.
-            Read current content first with get_md_file if you want to preserve parts of it.
-            file_id   : file to update, e.g. "spring-boot.md" or "skills/java/spring-ai.md".
-            title     : new H1 title.
-            body      : new main markdown content.
-            wiki_links: explicit list of wiki-link targets to include. Additional related
-                        notes are discovered automatically and merged in.
-            tags      : complete new list of tags (no # prefix).
-            metadata  : key-value pairs for the note frontmatter. Pass existing values
-                        from the current note to preserve them; omit a key to drop it.
-            Returns the file ID on success. Creates the file (and any parent directories)
-            if it does not already exist.
-            The knowledge graph is rebuilt automatically after the file is saved.
-            """)
+    @Tool(description = "Update an existing md file. Args: file_id, title, body, wiki_links, tags, metadata.")
     @PreAuthorize("hasRole('WRITE')")
     public String update_md_file(String file_id,
                                  String title,
@@ -261,12 +265,7 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = """
-            Delete an existing md file from the notes directory.
-            file_id : the file to delete, e.g. "old-note.md".
-            Returns the file ID on success, or an error if the file does not exist.
-            The knowledge graph is rebuilt automatically after deletion.
-            """)
+    @Tool(description = "Delete an md file by file_id.")
     @PreAuthorize("hasRole('WRITE')")
     public String delete_md_file(String file_id) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
@@ -282,14 +281,7 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = """
-            Set the importance of a note (0–10). Higher importance boosts the note
-            in search rankings and signals it should be prioritised by agents.
-            The value is written into the note's frontmatter as "importance: N"
-            so it persists across server restarts.
-            file_id    : the note to update, e.g. "spring-ai.md".
-            importance : integer 0–10 (0 = unset, 10 = most important).
-            """)
+    @Tool(description = "Set note importance (0-10) to boost its search ranking.")
     @PreAuthorize("hasRole('WRITE')")
     public String set_note_importance(String file_id, int importance) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
@@ -309,12 +301,8 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = """
-            Returns a summary of the knowledge graph: total note count, top tags,
-            most-connected notes, notes by importance, and embedding availability.
-            Use this to orient yourself before searching or editing.
-            """, returnDirect = true)
-    public Map<String, Object> get_memory_summary() {
+    @Tool(description = "Returns summary of the vault: total notes, top tags, and highly connected notes.")
+    public String get_memory_summary() {
         var graph = holder.getGraph();
         var allNotes = graph.getAllMdFiles();
 
@@ -332,7 +320,6 @@ public class MemoLinkMcpTools {
         List<Map<String, Object>> mostConnected = allNotes.stream()
                 .map(n -> Map.<String, Object>of(
                         "id", n.getId(),
-                        "title", n.getTitle(),
                         "connections", graph.getNeighborEdges(n.getId()).size()))
                 .sorted(Comparator.<Map<String, Object>, Integer>comparing(
                         m -> (Integer) m.get("connections")).reversed())
@@ -344,26 +331,36 @@ public class MemoLinkMcpTools {
                 .filter(n -> n.getImportance() > 0)
                 .sorted(Comparator.comparingInt(MdFileMetadata::getImportance).reversed())
                 .map(n -> Map.<String, Object>of(
-                        "id", n.getId(), "title", n.getTitle(), "importance", n.getImportance()))
+                        "id", n.getId(), "importance", n.getImportance()))
                 .toList();
 
-        return Map.of(
-                "totalNotes",       allNotes.size(),
-                "topTags",          topTags,
-                "mostConnected",    mostConnected,
-                "byImportance",     byImportance,
-                "semanticEnabled",  embeddingService.isAvailable()
-        );
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Memory Summary\n\n");
+        sb.append("- **Total Notes:** ").append(allNotes.size()).append("\n");
+        sb.append("- **Semantic Search Enabled:** ").append(embeddingService.isAvailable()).append("\n\n");
+        
+        sb.append("## Top Tags\n");
+        if (topTags.isEmpty()) sb.append("None\n");
+        for (var tag : topTags) {
+            sb.append("- ").append(tag.get("tag")).append(" (").append(tag.get("count")).append(")\n");
+        }
+        
+        sb.append("\n## Most Connected Notes\n");
+        if (mostConnected.isEmpty()) sb.append("None\n");
+        for (var n : mostConnected) {
+            sb.append("- **").append(n.get("id")).append("** (").append(n.get("connections")).append(" connections)\n");
+        }
+        
+        sb.append("\n## Important Notes\n");
+        if (byImportance.isEmpty()) sb.append("None\n");
+        for (var n : byImportance) {
+            sb.append("- **").append(n.get("id")).append("** (Importance: ").append(n.get("importance")).append(")\n");
+        }
+        return sb.toString();
     }
 
-    @Tool(description = """
-            Gather all notes related to a topic to prepare a reflection/summary node.
-            Returns the topic, list of related note IDs, and their key content excerpts
-            so the model can synthesise a summary note using create_md_file.
-            topic       : the topic to summarise, e.g. "Spring AI".
-            max_sources : maximum number of source notes to include (default 5).
-            """)
-    public Map<String, Object> gather_reflection_sources(String topic, int max_sources) {
+    @Tool(description = "Gather excerpts from notes related to a topic to help write a reflection summary.")
+    public String gather_reflection_sources(String topic, int max_sources) {
         int limit = max_sources > 0 ? Math.min(max_sources, 10) : 5;
         List<SearchResult> hits;
         try {
@@ -373,28 +370,74 @@ public class MemoLinkMcpTools {
             hits = List.of();
         }
 
-        List<Map<String, Object>> sources = hits.stream()
-                .map(r -> {
-                    MdFileMetadata m = holder.getGraph().getMdFile(r.id());
-                    String raw = m == null ? "" :
-                            m.getContent().substring(0, Math.min(m.getContent().length(), 600));
-                    // Compress the excerpt before sending to the LLM
-                    String excerpt = headroomService.compress(raw);
-                    return Map.<String, Object>of(
-                            "id",      r.id(),
-                            "title",   r.title(),
-                            "score",   r.score(),
-                            "excerpt", excerpt
-                    );
-                })
-                .toList();
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Reflection Sources for: ").append(topic).append("\n\n");
+        if (hits.isEmpty()) {
+            sb.append("No sources found for this topic.\n");
+            return sb.toString();
+        }
 
-        return Map.of(
-                "topic",           topic,
-                "sources",         sources,
-                "instruction",     "Use create_md_file to write a reflection note that synthesises " +
-                                   "these sources. Tag it with #reflection and link to each source."
-        );
+        for (var r : hits) {
+            MdFileMetadata m = holder.getGraph().getMdFile(r.id());
+            String raw = m == null ? "" :
+                    m.getContent().substring(0, Math.min(m.getContent().length(), 600));
+            String excerpt = headroomService.compress(raw);
+            
+            sb.append("## ").append(r.title()).append(" (").append(r.id()).append(")\n");
+            sb.append("**Score:** ").append(r.score()).append("\n\n");
+            sb.append(excerpt).append("\n\n");
+        }
+        sb.append("---\n**Instruction:** Use create_md_file to write a reflection note that synthesises these sources. Tag it with #reflection and link to each source.");
+        String result = sb.toString();
+        return nativeHandoffService.handoff("gather_reflection_sources", "topic", result);
+    }
+
+    // ── Formatting helpers for token efficiency ──────────────────────────────
+
+    private String formatSearchResults(List<SearchResult> results) {
+        if (results == null || results.isEmpty()) return "No results found.";
+        return results.stream()
+                .map(r -> String.format("- **%s** (%s) - Score: %.2f", r.id(), r.title(), r.score()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private String formatStringList(List<String> list) {
+        if (list == null || list.isEmpty()) return "None";
+        return list.stream().map(s -> "- " + s).collect(Collectors.joining("\n"));
+    }
+
+    private String formatNoteDetail(NoteDetail detail) {
+        if (detail == null) return "File not found.";
+        StringBuilder sb = new StringBuilder();
+        sb.append("# ").append(detail.title()).append("\n\n");
+        if (detail.tags() != null && !detail.tags().isEmpty()) {
+            sb.append("**Tags:** ").append(String.join(", ", detail.tags())).append("\n");
+        }
+        if (detail.wikiLinks() != null && !detail.wikiLinks().isEmpty()) {
+            sb.append("**Links:** ").append(String.join(", ", detail.wikiLinks())).append("\n");
+        }
+        sb.append("\n").append(detail.body());
+        return sb.toString();
+    }
+
+    private String formatGraphContext(GraphContextResult ctx) {
+        if (ctx == null) return "File not found.";
+        StringBuilder sb = new StringBuilder();
+        sb.append("# ").append(ctx.title()).append("\n\n");
+        if (ctx.tags() != null && !ctx.tags().isEmpty()) {
+            sb.append("**Tags:** ").append(String.join(", ", ctx.tags())).append("\n");
+        }
+        sb.append("\n").append(ctx.body()).append("\n\n");
+        sb.append("## Neighbors\n");
+        if (ctx.neighbors() == null || ctx.neighbors().isEmpty()) {
+            sb.append("No neighbors found.\n");
+        } else {
+            for (var n : ctx.neighbors()) {
+                sb.append(String.format("- **%s** (%s) [Type: %s, Weight: %d]\n", 
+                        n.id(), n.title(), n.relationType(), n.edgeWeight()));
+            }
+        }
+        return sb.toString();
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
