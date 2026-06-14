@@ -42,7 +42,7 @@ services:
         KOMPRESS_MODEL_ID: ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
     environment:
       KOMPRESS_MODEL_ID:   ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
-      KOMPRESS_THRESHOLD:  ${KOMPRESS_THRESHOLD:-0.5}
+      KOMPRESS_THRESHOLD:  ${KOMPRESS_THRESHOLD:-0.7}
       KOMPRESS_CHUNK_WORDS: ${KOMPRESS_CHUNK_WORDS:-350}
       HEADROOM_KOMPRESS_BACKEND: pytorch
       # Limit ONNX internal thread pools to avoid CPU contention in containers
@@ -65,6 +65,9 @@ services:
     environment:
       # Vault directory (bind-mounted from host)
       MEMOLINK_VAULT_DIR: /vault
+      # Pass the absolute path on the host machine to support Native Handoff correctly
+      # $PWD is expanded by docker-compose on your host machine before the container starts!
+      MEMOLINK_VAULT_HOST_DIR: ${VAULT_DIR:-${PWD}/vault}/.cache
       # Spring profile — must be 'http' for Streamable HTTP transport
       SPRING_PROFILES_ACTIVE: http
       MEMOLINK_HTTP_PORT: "8765"
@@ -102,7 +105,7 @@ services:
     volumes:
       # Bind-mount your vault directory.  Set VAULT_DIR in .env or inline:
       #   VAULT_DIR=/Users/you/obsidian-vault docker compose up
-      - ${VAULT_DIR:-./vault}:/vault:rw
+      - ${VAULT_DIR:-${PWD}/vault}:/vault:rw
     depends_on:
       headroom:
         condition: service_healthy     # wait until kompress model is fully loaded
