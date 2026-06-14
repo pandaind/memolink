@@ -9,7 +9,6 @@ import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.MdFileParserService;
 import ist.logic.mcp.service.HeadroomCompressionService;
-import ist.logic.mcp.service.NativeHandoffService;
 import ist.logic.mcp.service.StopWordFilterService;
 import ist.logic.mcp.template.NoteTemplateService;
 import org.springframework.ai.tool.annotation.Tool;
@@ -57,7 +56,6 @@ public class MemoLinkMcpTools {
     private final EmbeddingService          embeddingService;
     private final HeadroomCompressionService headroomService;
     private final StopWordFilterService     stopWordFilterService;
-    private final NativeHandoffService      nativeHandoffService;
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
@@ -65,8 +63,7 @@ public class MemoLinkMcpTools {
                            NoteTemplateService noteTemplateService,
                            EmbeddingService embeddingService,
                            HeadroomCompressionService headroomService,
-                           StopWordFilterService stopWordFilterService,
-                           NativeHandoffService nativeHandoffService) {
+                           StopWordFilterService stopWordFilterService) {
         this.holder               = holder;
         this.traversalService     = traversalService;
         this.vaultDir             = mdGraphVaultDir;
@@ -74,7 +71,6 @@ public class MemoLinkMcpTools {
         this.embeddingService     = embeddingService;
         this.headroomService      = headroomService;
         this.stopWordFilterService = stopWordFilterService;
-        this.nativeHandoffService = nativeHandoffService;
     }
 
     @Tool(description = "Search md files via semantic search. Returns matching file IDs, titles, and excerpts.")
@@ -110,8 +106,7 @@ public class MemoLinkMcpTools {
                     detail.id(), detail.title(), detail.tags(),
                     detail.headings(), detail.wikiLinks(), compressedBody);
         }
-        String result = formatNoteDetail(detail);
-        return nativeHandoffService.handoff("get_md_file", file_id, result);
+        return formatNoteDetail(detail);
     }
 
     @Tool(description = "Traverse the graph from a file up to given depth (max 3). Returns connected file IDs.")
@@ -171,8 +166,7 @@ public class MemoLinkMcpTools {
         
         String extracted = section.toString().trim();
         String stripped = stopWordFilterService.strip(extracted);
-        String result = headroomService.compress(stripped);
-        return nativeHandoffService.handoff("get_md_file_section", file_id, result);
+        return headroomService.compress(stripped);
     }
 
     @Tool(description = "Pure semantic vector search. Returns matching file IDs and excerpts.")
@@ -201,8 +195,7 @@ public class MemoLinkMcpTools {
                     ctx.headings(), ctx.wikiLinks(), compressedBody,
                     ctx.neighbors());
         }
-        String result = formatGraphContext(ctx);
-        return nativeHandoffService.handoff("get_graph_context", file_id, result);
+        return formatGraphContext(ctx);
     }
 
     @Tool(description = "Find shortest path of connected notes between from_id and to_id.")
@@ -388,8 +381,7 @@ public class MemoLinkMcpTools {
             sb.append(excerpt).append("\n\n");
         }
         sb.append("---\n**Instruction:** Use create_md_file to write a reflection note that synthesises these sources. Tag it with #reflection and link to each source.");
-        String result = sb.toString();
-        return nativeHandoffService.handoff("gather_reflection_sources", "topic", result);
+        return sb.toString();
     }
 
     // ── Formatting helpers for token efficiency ──────────────────────────────

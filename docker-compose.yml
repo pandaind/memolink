@@ -65,9 +65,6 @@ services:
     environment:
       # Vault directory (bind-mounted from host)
       MEMOLINK_VAULT_DIR: /vault
-      # Pass the absolute path on the host machine to support Native Handoff correctly
-      # $PWD is expanded by docker-compose on your host machine before the container starts!
-      MEMOLINK_VAULT_HOST_DIR: ${VAULT_DIR:-${PWD}/vault}/.cache
       # Spring profile — must be 'http' for Streamable HTTP transport
       SPRING_PROFILES_ACTIVE: http
       MEMOLINK_HTTP_PORT: "8765"
