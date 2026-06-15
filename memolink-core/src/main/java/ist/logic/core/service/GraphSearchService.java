@@ -10,9 +10,12 @@ import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.FSDirectory;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Function;
 
@@ -37,15 +40,36 @@ public class GraphSearchService implements Closeable {
     private static final float BETA  = 0.8f;  // KNN weight
 
     private final Directory        directory;
+    private final Directory        chunkDirectory;
     private final StandardAnalyzer analyzer;
 
     private DirectoryReader reader;
     private IndexSearcher   searcher;
 
+    private DirectoryReader chunkReader;
+    private IndexSearcher   chunkSearcher;
+
     public GraphSearchService() {
-        this.directory = new ByteBuffersDirectory();
-        this.analyzer  = new StandardAnalyzer();
+        this(false, null);
     }
+
+    public GraphSearchService(boolean useDisk, Path indexDir) {
+        this.analyzer  = new StandardAnalyzer();
+        try {
+            if (useDisk && indexDir != null) {
+                if (!Files.exists(indexDir)) Files.createDirectories(indexDir);
+                this.directory = FSDirectory.open(indexDir.resolve("main"));
+                this.chunkDirectory = FSDirectory.open(indexDir.resolve("chunks"));
+            } else {
+                this.directory = new ByteBuffersDirectory();
+                this.chunkDirectory = new ByteBuffersDirectory();
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to initialize Lucene directories", e);
+        }
+    }
+
+    public record ChunkSearchResult(String fileId, int chunkIndex, float score) {}
 
     // ── Indexing ──────────────────────────────────────────────────────────────
 
@@ -80,8 +104,27 @@ public class GraphSearchService implements Closeable {
                 writer.addDocument(doc);
             }
         }
+
+        try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, new IndexWriterConfig(analyzer))) {
+            for (MdFileMetadata note : notes) {
+                if (note.getChunkEmbeddings() != null) {
+                    for (int i = 0; i < note.getChunkEmbeddings().size(); i++) {
+                        Document doc = new Document();
+                        doc.add(new StringField("fileId", note.getId(), Field.Store.YES));
+                        doc.add(new StoredField("chunkIndex", i));
+                        doc.add(new KnnFloatVectorField("embedding", note.getChunkEmbeddings().get(i),
+                                VectorSimilarityFunction.COSINE));
+                        chunkWriter.addDocument(doc);
+                    }
+                }
+            }
+        }
+
         this.reader   = DirectoryReader.open(directory);
         this.searcher = new IndexSearcher(reader);
+
+        this.chunkReader   = DirectoryReader.open(chunkDirectory);
+        this.chunkSearcher = new IndexSearcher(chunkReader);
     }
 
     // ── Keyword search (BM25) ─────────────────────────────────────────────────
@@ -127,6 +170,18 @@ public class GraphSearchService implements Closeable {
         for (ScoreDoc sd : topDocs.scoreDocs) {
             Document doc = searcher.storedFields().document(sd.doc);
             results.add(new SearchResult(doc.get("id"), doc.get("title"), sd.score));
+        }
+        return results;
+    }
+
+    public List<ChunkSearchResult> searchChunks(float[] queryEmbedding, int maxResults) throws IOException {
+        if (chunkReader == null || queryEmbedding == null) return Collections.emptyList();
+        Query knnQuery = new KnnFloatVectorQuery("embedding", queryEmbedding, maxResults);
+        TopDocs topDocs = chunkSearcher.search(knnQuery, maxResults);
+        List<ChunkSearchResult> results = new ArrayList<>(topDocs.scoreDocs.length);
+        for (ScoreDoc sd : topDocs.scoreDocs) {
+            Document doc = chunkSearcher.storedFields().document(sd.doc);
+            results.add(new ChunkSearchResult(doc.get("fileId"), doc.getField("chunkIndex").numericValue().intValue(), sd.score));
         }
         return results;
     }
@@ -226,7 +281,9 @@ public class GraphSearchService implements Closeable {
     @Override
     public void close() throws IOException {
         if (reader != null) { reader.close(); }
+        if (chunkReader != null) { chunkReader.close(); }
         analyzer.close();
         directory.close();
+        chunkDirectory.close();
     }
 }

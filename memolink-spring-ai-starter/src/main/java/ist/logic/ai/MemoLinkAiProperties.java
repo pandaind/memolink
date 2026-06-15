@@ -23,4 +23,13 @@ public class MemoLinkAiProperties {
     public void setVaultDir(String vaultDir) {
         this.vaultDir = vaultDir;
     }
+
+    public static class Lucene {
+        private String storage = "memory";
+        public String getStorage() { return storage; }
+        public void setStorage(String storage) { this.storage = storage; }
+    }
+    private Lucene lucene = new Lucene();
+    public Lucene getLucene() { return lucene; }
+    public void setLucene(Lucene lucene) { this.lucene = lucene; }
 }

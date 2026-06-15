@@ -38,7 +38,9 @@ public class MemoLinkAiAutoConfiguration {
     public GraphHolder memoLinkAiHolder(MemoLinkAiProperties props) throws IOException {
         Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         KnowledgeGraph graph = new GraphBuilderService().build(rootDir);
-        GraphSearchService searchService = new GraphSearchService();
+        boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
+        Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
+        GraphSearchService searchService = new GraphSearchService(useDisk, luceneDir);
         searchService.index(graph.getAllMdFiles());
         return new GraphHolder(graph, searchService);
     }
@@ -52,7 +54,9 @@ public class MemoLinkAiAutoConfiguration {
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(holder.getGraph(), changedPaths);
-                GraphSearchService newSearch = new GraphSearchService();
+                boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
+                Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
+                GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
                 newSearch.index(newGraph.getAllMdFiles());
                 holder.update(newGraph, newSearch);
             } catch (IOException ignored) {}

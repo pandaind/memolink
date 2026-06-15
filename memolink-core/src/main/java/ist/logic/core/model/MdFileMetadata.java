@@ -29,6 +29,8 @@ public class MdFileMetadata {
 
     // ── Capability 1: semantic embedding (384-dim, null until computed) ─────
     private volatile float[] embedding;
+    private volatile java.util.List<String> chunkTexts;
+    private volatile java.util.List<float[]> chunkEmbeddings;
 
     // ── Capability 5: metadata ranking ──────────────────────────────────────
     /** 0–10 user-assigned importance (default 0 = unset). */
@@ -72,6 +74,12 @@ public class MdFileMetadata {
     public float[] getEmbedding()              { return embedding; }
     public void    setEmbedding(float[] emb)   { this.embedding = emb; }
     public boolean hasEmbedding()              { return embedding != null; }
+
+    public java.util.List<String> getChunkTexts() { return chunkTexts; }
+    public void setChunkTexts(java.util.List<String> chunkTexts) { this.chunkTexts = chunkTexts; }
+    
+    public java.util.List<float[]> getChunkEmbeddings() { return chunkEmbeddings; }
+    public void setChunkEmbeddings(java.util.List<float[]> chunkEmbeddings) { this.chunkEmbeddings = chunkEmbeddings; }
 
     // ── Metadata ranking ─────────────────────────────────────────────────────
     public int  getImportance()              { return importance; }

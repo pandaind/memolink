@@ -384,70 +384,48 @@ public class MemoLinkMcpTools {
         return sb.toString();
     }
 
-    @Tool(description = "Search the entire vault and return the exact relevant paragraphs to answer the query.")
+    @Tool(description = "Search the entire vault and return the exact relevant paragraphs to answer the query. Includes graph connections.")
     public String query_vault(String query) {
         if (query == null || query.isBlank()) return "Query is empty.";
-        
-        List<SearchResult> hits;
+
+        float[] queryVector = embeddingService.embed(query);
+        if (queryVector == null) return "Embedding service unavailable.";
+
+        List<ist.logic.core.service.GraphSearchService.ChunkSearchResult> hits;
         try {
-            hits = holder.getSearchService().hybridSearch(
-                    query, embeddingService, 3, holder.getGraph()::getMdFile);
+            hits = holder.getSearchService().searchChunks(queryVector, 5);
         } catch (IOException e) {
             return "Search failed: " + e.getMessage();
         }
 
         if (hits.isEmpty()) return "No relevant notes found for your query.";
 
-        float[] queryVector = embeddingService.embed(query);
-        if (queryVector == null) return "Embedding service unavailable.";
-
-        // A simple record to hold chunk scores
-        record ChunkScore(String fileId, String content, float score) {}
-        List<ChunkScore> allChunks = new java.util.ArrayList<>();
-
-        for (SearchResult hit : hits) {
-            MdFileMetadata m = holder.getGraph().getMdFile(hit.id());
-            if (m == null || m.getContent() == null) continue;
-
-            // Split into paragraphs roughly
-            String[] paragraphs = m.getContent().split("\\n\\s*\\n");
-            for (String p : paragraphs) {
-                String cleanP = p.trim();
-                if (cleanP.length() < 50) continue; // skip tiny lines
-
-                float[] pVector = embeddingService.embed(cleanP);
-                if (pVector != null) {
-                    float score = cosineSimilarity(queryVector, pVector);
-                    allChunks.add(new ChunkScore(hit.id(), cleanP, score));
-                }
-            }
-        }
-
-        // Sort descending
-        allChunks.sort((a, b) -> Float.compare(b.score(), a.score()));
-
-        // Take top 5
-        int limit = Math.min(5, allChunks.size());
         StringBuilder sb = new StringBuilder();
-        sb.append("# Top Results for: ").append(query).append("\n\n");
-        for (int i = 0; i < limit; i++) {
-            ChunkScore c = allChunks.get(i);
-            String compressed = headroomService.compress(stopWordFilterService.strip(c.content()));
-            sb.append("### From [").append(c.fileId()).append("] (Score: ")
-              .append(String.format("%.2f", c.score())).append(")\n");
-            sb.append(compressed).append("\n\n");
+        sb.append("<results query=\"").append(query).append("\">\n");
+        for (ist.logic.core.service.GraphSearchService.ChunkSearchResult hit : hits) {
+            MdFileMetadata m = holder.getGraph().getMdFile(hit.fileId());
+            if (m == null || m.getChunkTexts() == null || hit.chunkIndex() >= m.getChunkTexts().size()) continue;
+
+            String text = m.getChunkTexts().get(hit.chunkIndex());
+            String compressed = headroomService.compress(stopWordFilterService.strip(text));
+
+            // Get neighbors for Graph-Augmented RAG
+            ist.logic.core.model.GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), hit.fileId());
+            List<String> links = ctx.neighbors().stream()
+                .map(n -> "[[" + n.id() + "]]")
+                .toList();
+
+            sb.append("<source id=\"").append(hit.fileId()).append("\" score=\"")
+              .append(String.format("%.2f", hit.score())).append("\">\n");
+            sb.append(compressed).append("\n");
+            if (!links.isEmpty()) {
+                sb.append("*Graph Connections:* Links to ").append(String.join(", ", links)).append("\n");
+            }
+            sb.append("</source>\n\n");
         }
+        sb.append("</results>");
 
         return sb.toString();
-    }
-
-    private float cosineSimilarity(float[] v1, float[] v2) {
-        if (v1 == null || v2 == null || v1.length != v2.length) return 0f;
-        float dot = 0f;
-        for (int i = 0; i < v1.length; i++) {
-            dot += v1[i] * v2[i];
-        }
-        return dot;
     }
 
     // ── Formatting helpers for token efficiency ──────────────────────────────

@@ -65,6 +65,8 @@ services:
     environment:
       # Vault directory (bind-mounted from host)
       MEMOLINK_VAULT_DIR: /vault
+      # Lucene storage mode: memory or disk
+      MEMOLINK_LUCENE_STORAGE: ${LUCENE_STORAGE:-memory}
       # Spring profile — must be 'http' for Streamable HTTP transport
       SPRING_PROFILES_ACTIVE: http
       MEMOLINK_HTTP_PORT: "8765"

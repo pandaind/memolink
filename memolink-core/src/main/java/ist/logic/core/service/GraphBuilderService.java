@@ -39,10 +39,12 @@ public class GraphBuilderService {
     public static class CacheEntry {
         public long lastModified;
         public float[] embedding;
+        public List<float[]> chunkEmbeddings;
         public CacheEntry() {}
-        public CacheEntry(long lastModified, float[] embedding) {
+        public CacheEntry(long lastModified, float[] embedding, List<float[]> chunkEmbeddings) {
             this.lastModified = lastModified;
             this.embedding = embedding;
+            this.chunkEmbeddings = chunkEmbeddings;
         }
     }
 
@@ -158,7 +160,8 @@ public class GraphBuilderService {
         boolean cacheUpdated = false;
 
         for (MdFileMetadata m : files) {
-            if (!m.hasEmbedding()) {
+            boolean needsEmbedding = !m.hasEmbedding() || m.getChunkEmbeddings() == null;
+            if (needsEmbedding) {
                 String id = m.getId();
                 long lastMod = 0;
                 try {
@@ -166,14 +169,42 @@ public class GraphBuilderService {
                 } catch (IOException ignored) {}
 
                 CacheEntry entry = cache.get(id);
-                if (entry != null && entry.lastModified >= lastMod && entry.embedding != null) {
+                if (entry != null && entry.lastModified >= lastMod && entry.embedding != null && entry.chunkEmbeddings != null) {
                     m.setEmbedding(entry.embedding);
+                    m.setChunkEmbeddings(entry.chunkEmbeddings);
+                    // We must still reconstruct chunkTexts since we don't cache texts
+                    List<String> texts = new ArrayList<>();
+                    if (m.getContent() != null) {
+                        for (String p : m.getContent().split("\\n\\s*\\n")) {
+                            String clean = p.trim();
+                            if (clean.length() >= 50) texts.add(clean);
+                        }
+                    }
+                    m.setChunkTexts(texts);
                     cachedCount++;
                 } else {
                     float[] emb = embeddingService.embedNote(m.getTitle(), m.getContent());
+                    
+                    List<float[]> cEmbs = new ArrayList<>();
+                    List<String> cTexts = new ArrayList<>();
+                    if (m.getContent() != null) {
+                        for (String p : m.getContent().split("\\n\\s*\\n")) {
+                            String clean = p.trim();
+                            if (clean.length() >= 50) {
+                                float[] pVec = embeddingService.embed(clean);
+                                if (pVec != null) {
+                                    cEmbs.add(pVec);
+                                    cTexts.add(clean);
+                                }
+                            }
+                        }
+                    }
+
                     if (emb != null) { 
                         m.setEmbedding(emb); 
-                        cache.put(id, new CacheEntry(lastMod, emb));
+                        m.setChunkEmbeddings(cEmbs);
+                        m.setChunkTexts(cTexts);
+                        cache.put(id, new CacheEntry(lastMod, emb, cEmbs));
                         cacheUpdated = true;
                         count++; 
                     }

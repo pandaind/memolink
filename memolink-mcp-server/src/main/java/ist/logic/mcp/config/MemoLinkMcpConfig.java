@@ -34,6 +34,9 @@ public class MemoLinkMcpConfig {
     @Value("${memolink.vault-dir:${user.home}/vault}")
     private String vaultDir;
 
+    @Value("${memolink.lucene.storage:memory}")
+    private String luceneStorage;
+
     @Bean(destroyMethod = "close")
     public EmbeddingService embeddingService(ResourceLoader resourceLoader) {
         // Extract model files synchronously (no-op if already on disk — fast).
@@ -55,7 +58,11 @@ public class MemoLinkMcpConfig {
         embeddingService.awaitReady(60_000);
         Path rootDir = Path.of(vaultDir).toAbsolutePath();
         KnowledgeGraph graph = builder.build(rootDir, embeddingService);
-        GraphSearchService searchService = new GraphSearchService();
+        
+        boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
+        Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
+        GraphSearchService searchService = new GraphSearchService(useDisk, luceneDir);
+        
         searchService.index(graph.getAllMdFiles());
         return new GraphHolder(graph, searchService);
     }
@@ -69,7 +76,9 @@ public class MemoLinkMcpConfig {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(
                         holder.getGraph(), changedPaths, embeddingService);
-                GraphSearchService newSearch = new GraphSearchService();
+                boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
+                Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
+                GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
                 newSearch.index(newGraph.getAllMdFiles());
                 holder.update(newGraph, newSearch);
             } catch (IOException ignored) {}

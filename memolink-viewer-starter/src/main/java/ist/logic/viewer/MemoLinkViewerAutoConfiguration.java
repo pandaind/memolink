@@ -2,6 +2,7 @@ package ist.logic.viewer;
 
 import ist.logic.core.model.KnowledgeGraph;
 import ist.logic.core.service.GraphBuilderService;
+import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphSearchService;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.GraphWatchService;
@@ -35,7 +36,9 @@ public class MemoLinkViewerAutoConfiguration {
     public GraphRegistry memoLinkViewerRegistry(MemoLinkViewerProperties props) throws IOException {
         Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         KnowledgeGraph graph = new GraphBuilderService().build(rootDir);
-        GraphSearchService searchService = new GraphSearchService();
+        boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
+        Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
+        GraphSearchService searchService = new GraphSearchService(useDisk, luceneDir);
         searchService.index(graph.getAllMdFiles());
         return new GraphRegistry(graph, searchService);
     }
@@ -49,7 +52,9 @@ public class MemoLinkViewerAutoConfiguration {
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(registry.getGraph(), changedPaths);
-                GraphSearchService newSearch = new GraphSearchService();
+                boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
+                Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
+                GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
                 newSearch.index(newGraph.getAllMdFiles());
                 registry.update(newGraph, newSearch);
             } catch (IOException ignored) {}

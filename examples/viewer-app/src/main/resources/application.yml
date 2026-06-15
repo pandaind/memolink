@@ -2,7 +2,9 @@ memolink:
   # Path to the directory that contains your Markdown (.md) files.
   # The starter scans this directory recursively on startup.
   # Defaults to ~/vault when not set.
-  vault-dir: examples/sample-notes   # relative paths resolve from the working directory
+  vault-dir: ${MEMOLINK_VAULT_DIR:${user.home}/vault}
+  lucene:
+    storage: ${MEMOLINK_LUCENE_STORAGE:memory}
 
 server:
   port: 8080
