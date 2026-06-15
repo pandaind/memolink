@@ -384,6 +384,72 @@ public class MemoLinkMcpTools {
         return sb.toString();
     }
 
+    @Tool(description = "Search the entire vault and return the exact relevant paragraphs to answer the query.")
+    public String query_vault(String query) {
+        if (query == null || query.isBlank()) return "Query is empty.";
+        
+        List<SearchResult> hits;
+        try {
+            hits = holder.getSearchService().hybridSearch(
+                    query, embeddingService, 3, holder.getGraph()::getMdFile);
+        } catch (IOException e) {
+            return "Search failed: " + e.getMessage();
+        }
+
+        if (hits.isEmpty()) return "No relevant notes found for your query.";
+
+        float[] queryVector = embeddingService.embed(query);
+        if (queryVector == null) return "Embedding service unavailable.";
+
+        // A simple record to hold chunk scores
+        record ChunkScore(String fileId, String content, float score) {}
+        List<ChunkScore> allChunks = new java.util.ArrayList<>();
+
+        for (SearchResult hit : hits) {
+            MdFileMetadata m = holder.getGraph().getMdFile(hit.id());
+            if (m == null || m.getContent() == null) continue;
+
+            // Split into paragraphs roughly
+            String[] paragraphs = m.getContent().split("\\n\\s*\\n");
+            for (String p : paragraphs) {
+                String cleanP = p.trim();
+                if (cleanP.length() < 50) continue; // skip tiny lines
+
+                float[] pVector = embeddingService.embed(cleanP);
+                if (pVector != null) {
+                    float score = cosineSimilarity(queryVector, pVector);
+                    allChunks.add(new ChunkScore(hit.id(), cleanP, score));
+                }
+            }
+        }
+
+        // Sort descending
+        allChunks.sort((a, b) -> Float.compare(b.score(), a.score()));
+
+        // Take top 5
+        int limit = Math.min(5, allChunks.size());
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Top Results for: ").append(query).append("\n\n");
+        for (int i = 0; i < limit; i++) {
+            ChunkScore c = allChunks.get(i);
+            String compressed = headroomService.compress(stopWordFilterService.strip(c.content()));
+            sb.append("### From [").append(c.fileId()).append("] (Score: ")
+              .append(String.format("%.2f", c.score())).append(")\n");
+            sb.append(compressed).append("\n\n");
+        }
+
+        return sb.toString();
+    }
+
+    private float cosineSimilarity(float[] v1, float[] v2) {
+        if (v1 == null || v2 == null || v1.length != v2.length) return 0f;
+        float dot = 0f;
+        for (int i = 0; i < v1.length; i++) {
+            dot += v1[i] * v2[i];
+        }
+        return dot;
+    }
+
     // ── Formatting helpers for token efficiency ──────────────────────────────
 
     private String formatSearchResults(List<SearchResult> results) {
