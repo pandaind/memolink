@@ -401,7 +401,7 @@ public class MemoLinkMcpTools {
         if (hits.isEmpty()) return "No relevant notes found for your query.";
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<results query=\"").append(query).append("\">\n");
+        sb.append("### Search Results for: ").append(query).append("\n\n");
         for (ist.logic.core.service.GraphSearchService.ChunkSearchResult hit : hits) {
             MdFileMetadata m = holder.getGraph().getMdFile(hit.fileId());
             if (m == null || m.getChunkTexts() == null || hit.chunkIndex() >= m.getChunkTexts().size()) continue;
@@ -415,15 +415,14 @@ public class MemoLinkMcpTools {
                 .map(n -> "[[" + n.id() + "]]")
                 .toList();
 
-            sb.append("<source id=\"").append(hit.fileId()).append("\" score=\"")
-              .append(String.format("%.2f", hit.score())).append("\">\n");
-            sb.append(compressed).append("\n");
+            sb.append("#### File: ").append(hit.fileId()).append(" (Score: ")
+              .append(String.format("%.2f", hit.score())).append(")\n");
+            sb.append("> ").append(compressed.replace("\n", "\n> ")).append("\n\n");
             if (!links.isEmpty()) {
-                sb.append("*Graph Connections:* Links to ").append(String.join(", ", links)).append("\n");
+                sb.append("*Graph Connections:* Links to ").append(String.join(", ", links)).append("\n\n");
             }
-            sb.append("</source>\n\n");
+            sb.append("---\n\n");
         }
-        sb.append("</results>");
 
         return sb.toString();
     }

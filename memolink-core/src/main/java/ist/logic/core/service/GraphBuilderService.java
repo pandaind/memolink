@@ -50,6 +50,8 @@ public class GraphBuilderService {
 
     /** Set during {@link #build}; used by incremental rebuilds to compute relative-path IDs. */
     private volatile Path rootDir;
+    private Path cacheFile = null;
+    private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
     public KnowledgeGraph build(Path rootDir) throws IOException {
         return build(rootDir, null);
@@ -129,11 +131,8 @@ public class GraphBuilderService {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private void embedAll(List<MdFileMetadata> files, EmbeddingService embeddingService) {
-        if (embeddingService == null || !embeddingService.isAvailable()) return;
-        
-        Path cacheFile = null;
-        if (rootDir != null) {
+    private void initCache() {
+        if (rootDir != null && cacheFile == null) {
             Path memolinkDir = rootDir.resolve(".memolink");
             try {
                 if (!Files.exists(memolinkDir)) Files.createDirectories(memolinkDir);
@@ -141,23 +140,24 @@ public class GraphBuilderService {
             } catch (IOException e) {
                 log.warn("Could not create .memolink directory for caching: {}", e.getMessage());
             }
-        }
 
-        Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
-        if (cacheFile != null && Files.exists(cacheFile)) {
-            try {
-                Map<String, CacheEntry> loaded = mapper.readValue(cacheFile.toFile(), 
-                        new TypeReference<Map<String, CacheEntry>>() {});
-                if (loaded != null) cache.putAll(loaded);
-                log.info("Loaded {} cached embeddings", cache.size());
-            } catch (IOException e) {
-                log.warn("Failed to read embeddings cache, will rebuild: {}", e.getMessage());
+            if (cacheFile != null && Files.exists(cacheFile)) {
+                try {
+                    Map<String, CacheEntry> loaded = mapper.readValue(cacheFile.toFile(), 
+                            new TypeReference<Map<String, CacheEntry>>() {});
+                    if (loaded != null) cache.putAll(loaded);
+                    log.info("Loaded {} cached embeddings", cache.size());
+                } catch (IOException e) {
+                    log.warn("Failed to read embeddings cache, will rebuild: {}", e.getMessage());
+                }
             }
         }
+    }
 
-        int count = 0;
-        int cachedCount = 0;
-        boolean cacheUpdated = false;
+    private void embedAll(List<MdFileMetadata> files, EmbeddingService embeddingService) {
+        if (embeddingService == null || !embeddingService.isAvailable()) return;
+        
+        initCache();
 
         for (MdFileMetadata m : files) {
             boolean needsEmbedding = !m.hasEmbedding() || m.getChunkEmbeddings() == null;
@@ -181,46 +181,63 @@ public class GraphBuilderService {
                         }
                     }
                     m.setChunkTexts(texts);
-                    cachedCount++;
-                } else {
-                    float[] emb = embeddingService.embedNote(m.getTitle(), m.getContent());
-                    
-                    List<float[]> cEmbs = new ArrayList<>();
-                    List<String> cTexts = new ArrayList<>();
-                    if (m.getContent() != null) {
-                        for (String p : m.getContent().split("\\n\\s*\\n")) {
-                            String clean = p.trim();
-                            if (clean.length() >= 50) {
-                                float[] pVec = embeddingService.embed(clean);
-                                if (pVec != null) {
-                                    cEmbs.add(pVec);
-                                    cTexts.add(clean);
-                                }
+                }
+            }
+        }
+    }
+
+    public void computeMissingEmbeddings(KnowledgeGraph graph, EmbeddingService embeddingService) {
+        int count = 0;
+        boolean cacheUpdated = false;
+
+        for (MdFileMetadata m : graph.getAllMdFiles()) {
+            boolean needsEmbedding = !m.hasEmbedding() || m.getChunkEmbeddings() == null;
+            if (needsEmbedding) {
+                long lastMod = 0;
+                try {
+                    lastMod = Files.getLastModifiedTime(m.getFilePath()).toMillis();
+                } catch (IOException ignored) {}
+
+                float[] emb = embeddingService.embedNote(m.getTitle(), m.getContent());
+                
+                List<float[]> cEmbs = new ArrayList<>();
+                List<String> cTexts = new ArrayList<>();
+                if (m.getContent() != null) {
+                    for (String p : m.getContent().split("\\n\\s*\\n")) {
+                        String clean = p.trim();
+                        if (clean.length() >= 50) {
+                            float[] pVec = embeddingService.embed(clean);
+                            if (pVec != null) {
+                                cEmbs.add(pVec);
+                                cTexts.add(clean);
                             }
                         }
                     }
+                }
 
-                    if (emb != null) { 
-                        m.setEmbedding(emb); 
-                        m.setChunkEmbeddings(cEmbs);
-                        m.setChunkTexts(cTexts);
-                        cache.put(id, new CacheEntry(lastMod, emb, cEmbs));
-                        cacheUpdated = true;
-                        count++; 
-                    }
+                if (emb != null) { 
+                    m.setEmbedding(emb); 
+                    m.setChunkEmbeddings(cEmbs);
+                    m.setChunkTexts(cTexts);
+                    cache.put(m.getId(), new CacheEntry(lastMod, emb, cEmbs));
+                    cacheUpdated = true;
+                    count++; 
+                    try {
+                        Thread.sleep(100); // Throttle to prevent CPU overheating
+                    } catch (InterruptedException ignored) {}
                 }
             }
         }
         
-        if (cachedCount > 0) log.info("Reused {} cached embeddings", cachedCount);
-        if (count > 0) log.info("Computed {} new embeddings", count);
-
-        if (cacheUpdated && cacheFile != null) {
-            try {
-                mapper.writeValue(cacheFile.toFile(), cache);
-                log.info("Saved embeddings cache to disk");
-            } catch (IOException e) {
-                log.warn("Failed to write embeddings cache: {}", e.getMessage());
+        if (count > 0) {
+            log.info("Computed {} new embeddings sequentially in background", count);
+            if (cacheFile != null) {
+                try {
+                    mapper.writeValue(cacheFile.toFile(), cache);
+                    log.info("Saved embeddings cache to disk");
+                } catch (IOException e) {
+                    log.warn("Failed to write embeddings cache: {}", e.getMessage());
+                }
             }
         }
     }

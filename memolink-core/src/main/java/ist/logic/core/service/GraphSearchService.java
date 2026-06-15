@@ -75,6 +75,7 @@ public class GraphSearchService implements Closeable {
 
     public void index(Collection<MdFileMetadata> notes) throws IOException {
         IndexWriterConfig config = new IndexWriterConfig(analyzer);
+        config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
         try (IndexWriter writer = new IndexWriter(directory, config)) {
             for (MdFileMetadata note : notes) {
                 Document doc = new Document();
@@ -105,7 +106,9 @@ public class GraphSearchService implements Closeable {
             }
         }
 
-        try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, new IndexWriterConfig(analyzer))) {
+        IndexWriterConfig chunkConfig = new IndexWriterConfig(analyzer);
+        chunkConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
+        try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, chunkConfig)) {
             for (MdFileMetadata note : notes) {
                 if (note.getChunkEmbeddings() != null) {
                     for (int i = 0; i < note.getChunkEmbeddings().size(); i++) {

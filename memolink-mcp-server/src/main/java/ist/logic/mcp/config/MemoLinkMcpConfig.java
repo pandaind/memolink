@@ -53,9 +53,6 @@ public class MemoLinkMcpConfig {
     @Bean
     public GraphHolder graphHolder(GraphBuilderService builder,
                                    EmbeddingService embeddingService) throws IOException {
-        // Wait for the ONNX model to finish loading before building the graph so
-        // that embedAll() can compute and store vector embeddings for every note.
-        embeddingService.awaitReady(60_000);
         Path rootDir = Path.of(vaultDir).toAbsolutePath();
         KnowledgeGraph graph = builder.build(rootDir, embeddingService);
         
@@ -64,6 +61,17 @@ public class MemoLinkMcpConfig {
         GraphSearchService searchService = new GraphSearchService(useDisk, luceneDir);
         
         searchService.index(graph.getAllMdFiles());
+
+        Thread.ofVirtual().start(() -> {
+            try {
+                embeddingService.awaitReady(60_000);
+                builder.computeMissingEmbeddings(graph, embeddingService);
+                searchService.index(graph.getAllMdFiles());
+            } catch (Exception e) {
+                // ignore
+            }
+        });
+
         return new GraphHolder(graph, searchService);
     }
 

@@ -62,5 +62,5 @@ spring:
 
 logging:
   level:
-    root: OFF
-    ist.logic: OFF
+    root: INFO
+    ist.logic: INFO
