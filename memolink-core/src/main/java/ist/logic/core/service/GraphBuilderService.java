@@ -188,7 +188,6 @@ public class GraphBuilderService {
 
     public void computeMissingEmbeddings(KnowledgeGraph graph, EmbeddingService embeddingService) {
         int count = 0;
-        boolean cacheUpdated = false;
 
         for (MdFileMetadata m : graph.getAllMdFiles()) {
             boolean needsEmbedding = !m.hasEmbedding() || m.getChunkEmbeddings() == null;
@@ -220,7 +219,6 @@ public class GraphBuilderService {
                     m.setChunkEmbeddings(cEmbs);
                     m.setChunkTexts(cTexts);
                     cache.put(m.getId(), new CacheEntry(lastMod, emb, cEmbs));
-                    cacheUpdated = true;
                     count++; 
                     try {
                         Thread.sleep(100); // Throttle to prevent CPU overheating
