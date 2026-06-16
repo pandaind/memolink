@@ -38,6 +38,10 @@ public class MdFileMetadata {
     private final AtomicInteger accessCount   = new AtomicInteger(0);
     private final AtomicLong    lastAccessedMs = new AtomicLong(0);
 
+    // ── Transient State ─────────────────────────────────────────────────────
+    /** Flags whether this file changed on disk compared to the index. */
+    private transient volatile boolean modified = true;
+
     public MdFileMetadata(String id, String title, String content, Path filePath,
                         Set<String> wikiLinks, Set<String> tags,
                         Set<String> keywords, Set<String> headings) {
@@ -92,6 +96,14 @@ public class MdFileMetadata {
     public void recordAccess() {
         accessCount.incrementAndGet();
         lastAccessedMs.set(System.currentTimeMillis());
+    }
+
+    public boolean isModified() {
+        return modified;
+    }
+
+    public void setModified(boolean modified) {
+        this.modified = modified;
     }
 
     @Override

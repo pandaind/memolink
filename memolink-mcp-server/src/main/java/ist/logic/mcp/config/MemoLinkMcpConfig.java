@@ -47,7 +47,10 @@ public class MemoLinkMcpConfig {
 
     @Bean
     public GraphBuilderService graphBuilderService() {
-        return new GraphBuilderService();
+        GraphBuilderService builder = new GraphBuilderService();
+        boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
+        builder.setUseDisk(useDisk);
+        return builder;
     }
 
     @Bean
@@ -87,6 +90,14 @@ public class MemoLinkMcpConfig {
                 boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
                 Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
                 GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
+                if (useDisk) {
+                    for (Path p : changedPaths) {
+                        if (!java.nio.file.Files.exists(p)) {
+                            String id = rootDir.relativize(p).toString().replace(java.io.File.separatorChar, '/');
+                            newSearch.deleteFromIndex(id);
+                        }
+                    }
+                }
                 newSearch.index(newGraph.getAllMdFiles());
                 holder.update(newGraph, newSearch);
             } catch (IOException ignored) {}

@@ -34,9 +34,11 @@ public class MemoLinkViewerAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public GraphRegistry memoLinkViewerRegistry(MemoLinkViewerProperties props) throws IOException {
-        Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
-        KnowledgeGraph graph = new GraphBuilderService().build(rootDir);
+        GraphBuilderService builder = new GraphBuilderService();
         boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
+        builder.setUseDisk(useDisk);
+        Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
+        KnowledgeGraph graph = builder.build(rootDir, null);
         Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
         GraphSearchService searchService = new GraphSearchService(useDisk, luceneDir);
         searchService.index(graph.getAllMdFiles());
@@ -49,12 +51,21 @@ public class MemoLinkViewerAutoConfiguration {
                                                        MemoLinkViewerProperties props) throws IOException {
         Path rootDir = Path.of(props.getVaultDir()).toAbsolutePath();
         GraphBuilderService builder = new GraphBuilderService();
+        boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
+        builder.setUseDisk(useDisk);
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(registry.getGraph(), changedPaths);
-                boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
                 Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
                 GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
+                if (useDisk) {
+                    for (Path p : changedPaths) {
+                        if (!java.nio.file.Files.exists(p)) {
+                            String id = rootDir.relativize(p).toString().replace(java.io.File.separatorChar, '/');
+                            newSearch.deleteFromIndex(id);
+                        }
+                    }
+                }
                 newSearch.index(newGraph.getAllMdFiles());
                 registry.update(newGraph, newSearch);
             } catch (IOException ignored) {}

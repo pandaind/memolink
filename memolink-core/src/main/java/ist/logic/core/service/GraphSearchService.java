@@ -39,6 +39,7 @@ public class GraphSearchService implements Closeable {
     private static final float ALPHA = 0.2f;  // BM25 weight
     private static final float BETA  = 0.8f;  // KNN weight
 
+    private final boolean          useDisk;
     private final Directory        directory;
     private final Directory        chunkDirectory;
     private final StandardAnalyzer analyzer;
@@ -54,6 +55,7 @@ public class GraphSearchService implements Closeable {
     }
 
     public GraphSearchService(boolean useDisk, Path indexDir) {
+        this.useDisk = useDisk;
         this.analyzer  = new StandardAnalyzer();
         try {
             if (useDisk && indexDir != null) {
@@ -75,9 +77,13 @@ public class GraphSearchService implements Closeable {
 
     public void index(Collection<MdFileMetadata> notes) throws IOException {
         IndexWriterConfig config = new IndexWriterConfig(analyzer);
-        config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
+        config.setOpenMode(useDisk ? IndexWriterConfig.OpenMode.CREATE_OR_APPEND : IndexWriterConfig.OpenMode.CREATE);
         try (IndexWriter writer = new IndexWriter(directory, config)) {
             for (MdFileMetadata note : notes) {
+                if (useDisk && !note.isModified()) {
+                    continue; // Skip safely because Lucene already has it on disk
+                }
+                
                 Document doc = new Document();
                 doc.add(new StringField("id",       note.getId(),    Field.Store.YES));
                 doc.add(new TextField("title",      note.getTitle(), Field.Store.YES));
@@ -98,29 +104,32 @@ public class GraphSearchService implements Closeable {
                 doc.add(new StoredField("importance",   note.getImportance()));
                 doc.add(new StoredField("accessCount",  note.getAccessCount()));
                 // KNN vector field (only when embedding is available)
-                if (note.hasEmbedding()) {
-                    doc.add(new KnnFloatVectorField("embedding", note.getEmbedding(),
-                            VectorSimilarityFunction.COSINE));
+                if (note.getEmbedding() != null) {
+                    doc.add(new KnnFloatVectorField("embedding", note.getEmbedding(), VectorSimilarityFunction.COSINE));
                 }
-                writer.addDocument(doc);
+                writer.updateDocument(new Term("id", note.getId()), doc);
             }
+            writer.commit();
         }
 
         IndexWriterConfig chunkConfig = new IndexWriterConfig(analyzer);
-        chunkConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
+        chunkConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
         try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, chunkConfig)) {
             for (MdFileMetadata note : notes) {
-                if (note.getChunkEmbeddings() != null) {
+                if (note.getChunkEmbeddings() != null && note.getChunkTexts() != null) {
+                    // Since multiple chunks share the same fileId, we use a compound term for deletion if we were to update chunks individually.
+                    // However, since we replace the entire file, we should delete all existing chunks for this file first.
+                    chunkWriter.deleteDocuments(new Term("fileId", note.getId()));
                     for (int i = 0; i < note.getChunkEmbeddings().size(); i++) {
-                        Document doc = new Document();
-                        doc.add(new StringField("fileId", note.getId(), Field.Store.YES));
-                        doc.add(new StoredField("chunkIndex", i));
-                        doc.add(new KnnFloatVectorField("embedding", note.getChunkEmbeddings().get(i),
-                                VectorSimilarityFunction.COSINE));
-                        chunkWriter.addDocument(doc);
+                        Document cDoc = new Document();
+                        cDoc.add(new StringField("fileId", note.getId(), Field.Store.YES));
+                        cDoc.add(new StoredField("chunkIndex", i));
+                        cDoc.add(new KnnFloatVectorField("chunk_embedding", note.getChunkEmbeddings().get(i), VectorSimilarityFunction.COSINE));
+                        chunkWriter.addDocument(cDoc);
                     }
                 }
             }
+            chunkWriter.commit();
         }
 
         this.reader   = DirectoryReader.open(directory);
@@ -128,6 +137,37 @@ public class GraphSearchService implements Closeable {
 
         this.chunkReader   = DirectoryReader.open(chunkDirectory);
         this.chunkSearcher = new IndexSearcher(chunkReader);
+    }
+
+    public void deleteFromIndex(String fileId) throws IOException {
+        IndexWriterConfig config = new IndexWriterConfig(analyzer);
+        config.setOpenMode(IndexWriterConfig.OpenMode.APPEND);
+        try (IndexWriter writer = new IndexWriter(directory, config)) {
+            writer.deleteDocuments(new Term("id", fileId));
+            writer.commit();
+        }
+
+        IndexWriterConfig chunkConfig = new IndexWriterConfig(analyzer);
+        chunkConfig.setOpenMode(IndexWriterConfig.OpenMode.APPEND);
+        try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, chunkConfig)) {
+            chunkWriter.deleteDocuments(new Term("fileId", fileId));
+            chunkWriter.commit();
+        }
+
+        // Reopen readers
+        DirectoryReader newReader = DirectoryReader.openIfChanged(this.reader);
+        if (newReader != null) {
+            this.reader.close();
+            this.reader = newReader;
+            this.searcher = new IndexSearcher(this.reader);
+        }
+
+        DirectoryReader newChunkReader = DirectoryReader.openIfChanged(this.chunkReader);
+        if (newChunkReader != null) {
+            this.chunkReader.close();
+            this.chunkReader = newChunkReader;
+            this.chunkSearcher = new IndexSearcher(this.chunkReader);
+        }
     }
 
     // ── Keyword search (BM25) ─────────────────────────────────────────────────

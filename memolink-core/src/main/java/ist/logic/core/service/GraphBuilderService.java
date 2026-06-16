@@ -51,7 +51,14 @@ public class GraphBuilderService {
     /** Set during {@link #build}; used by incremental rebuilds to compute relative-path IDs. */
     private volatile Path rootDir;
     private Path cacheFile = null;
+    private Path timestampsFile = null;
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private final Map<String, Long> timestamps = new ConcurrentHashMap<>();
+    private boolean useDisk = false;
+
+    public void setUseDisk(boolean useDisk) {
+        this.useDisk = useDisk;
+    }
 
     public KnowledgeGraph build(Path rootDir) throws IOException {
         return build(rootDir, null);
@@ -66,7 +73,15 @@ public class GraphBuilderService {
         List<MdFileMetadata> files = new ArrayList<>(paths.size());
         for (Path path : paths) {
             try {
-                files.add(parser.parse(path, rootDir));
+                MdFileMetadata m = parser.parse(path, rootDir);
+                long lastMod = Files.getLastModifiedTime(path).toMillis();
+                Long cachedMod = timestamps.get(m.getId());
+                if (cachedMod != null && cachedMod >= lastMod) {
+                    m.setModified(false);
+                } else {
+                    m.setModified(true);
+                }
+                files.add(m);
             } catch (IOException e) {
                 log.warn("Skipping unreadable file {}: {}", path, e.getMessage());
             }
@@ -102,6 +117,7 @@ public class GraphBuilderService {
                     MdFileMetadata updated = rootDir != null
                             ? parser.parse(path, rootDir)
                             : parser.parse(path);
+                    updated.setModified(true);
                     fileMap.put(updated.getId(), updated);
                 } catch (IOException e) {
                     log.warn("Skipping unreadable file {}: {}", path, e.getMessage());
@@ -137,11 +153,22 @@ public class GraphBuilderService {
             try {
                 if (!Files.exists(memolinkDir)) Files.createDirectories(memolinkDir);
                 cacheFile = memolinkDir.resolve("embeddings.json");
+                timestampsFile = memolinkDir.resolve("timestamps.json");
             } catch (IOException e) {
                 log.warn("Could not create .memolink directory for caching: {}", e.getMessage());
             }
 
-            if (cacheFile != null && Files.exists(cacheFile)) {
+            if (timestampsFile != null && Files.exists(timestampsFile)) {
+                try {
+                    Map<String, Long> loaded = mapper.readValue(timestampsFile.toFile(),
+                            new TypeReference<Map<String, Long>>() {});
+                    if (loaded != null) timestamps.putAll(loaded);
+                } catch (IOException e) {
+                    log.warn("Failed to read timestamps cache: {}", e.getMessage());
+                }
+            }
+
+            if (!useDisk && cacheFile != null && Files.exists(cacheFile)) {
                 try {
                     Map<String, CacheEntry> loaded = mapper.readValue(cacheFile.toFile(), 
                             new TypeReference<Map<String, CacheEntry>>() {});
@@ -190,6 +217,9 @@ public class GraphBuilderService {
         int count = 0;
 
         for (MdFileMetadata m : graph.getAllMdFiles()) {
+            if (useDisk && !m.isModified()) {
+                continue; // Safe on disk, skip embedding calculation to save API calls
+            }
             boolean needsEmbedding = !m.hasEmbedding() || m.getChunkEmbeddings() == null;
             if (needsEmbedding) {
                 long lastMod = 0;
@@ -218,7 +248,10 @@ public class GraphBuilderService {
                     m.setEmbedding(emb); 
                     m.setChunkEmbeddings(cEmbs);
                     m.setChunkTexts(cTexts);
-                    cache.put(m.getId(), new CacheEntry(lastMod, emb, cEmbs));
+                    if (!useDisk) {
+                        cache.put(m.getId(), new CacheEntry(lastMod, emb, cEmbs));
+                    }
+                    timestamps.put(m.getId(), lastMod);
                     count++; 
                     try {
                         Thread.sleep(100); // Throttle to prevent CPU overheating
@@ -229,12 +262,20 @@ public class GraphBuilderService {
         
         if (count > 0) {
             log.info("Computed {} new embeddings sequentially in background", count);
-            if (cacheFile != null) {
+            if (!useDisk && cacheFile != null) {
                 try {
                     mapper.writeValue(cacheFile.toFile(), cache);
                     log.info("Saved embeddings cache to disk");
                 } catch (IOException e) {
                     log.warn("Failed to write embeddings cache: {}", e.getMessage());
+                }
+            }
+            if (timestampsFile != null) {
+                try {
+                    mapper.writeValue(timestampsFile.toFile(), timestamps);
+                    log.info("Saved timestamps cache to disk");
+                } catch (IOException e) {
+                    log.warn("Failed to write timestamps cache: {}", e.getMessage());
                 }
             }
         }
