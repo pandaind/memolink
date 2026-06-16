@@ -40,26 +40,29 @@ async def lifespan(app: FastAPI):
 
     logger.info("Loading kompress model: %s (threshold=%.2f)", model_id, threshold)
 
-    from headroom.transforms.kompress_compressor import (
-        KompressCompressor,
-        KompressConfig,
+    from headroom.transforms.content_router import ContentRouter, ContentRouterConfig
+    from headroom.transforms.kompress_compressor import KompressCompressor, KompressConfig
+
+    config = ContentRouterConfig(
+        ccr_enabled=False,   # disable CCR cache — MemoLink manages its own cache
+    )
+    _compressor = ContentRouter(config)
+    _compressor._kompress = KompressCompressor(
+        config=KompressConfig(
+            model_id=model_id,
+            score_threshold=threshold,
+            chunk_words=chunk_words,
+            enable_ccr=False
+        )
     )
 
-    config = KompressConfig(
-        model_id=model_id,
-        score_threshold=threshold,
-        chunk_words=chunk_words,
-        enable_ccr=False,   # disable CCR cache — MemoLink manages its own cache
-    )
-    _compressor = KompressCompressor(config)
-
-    backend = _compressor.preload()
-    logger.info("Kompress ready  model=%s  backend=%s", model_id, backend)
+    status = _compressor.eager_load_compressors()
+    logger.info("ContentRouter ready  status=%s", status)
 
     yield  # server is live
 
     _compressor = None
-    logger.info("Kompress compressor unloaded")
+    logger.info("ContentRouter unloaded")
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
@@ -125,24 +128,42 @@ def compress(req: CompressRequest):
             compressed_tokens=n,
             compression_ratio=1.0,
             skipped=True,
-            model_id=_compressor.config.model_id,
+            model_id="none",
         )
 
     result = _compressor.compress(req.content)
 
+    # Fallback for MemoLink: if the router misidentified plain text as LOG or HTML
+    # and failed to save tokens, force KompressML directly.
+    if result.compression_ratio >= 1.0 and str(result.strategy_used) not in ("kompress", "smart_crusher", "code_aware"):
+        logger.info("ContentRouter strategy %s saved 0 tokens. Forcing KOMPRESS fallback.", result.strategy_used)
+        try:
+            k_res = _compressor._kompress.compress(req.content)
+            if k_res.compressed_tokens < result.total_original_tokens:
+                return CompressResponse(
+                    compressed=k_res.compressed,
+                    original_tokens=k_res.original_tokens,
+                    compressed_tokens=k_res.compressed_tokens,
+                    compression_ratio=k_res.compression_ratio,
+                    skipped=False,
+                    model_id=f"fallback:{k_res.model_used}",
+                )
+        except Exception as e:
+            logger.warning("KOMPRESS fallback failed: %s", e)
+
     logger.info(
-        "Compressed  words=%d→%d  ratio=%.2f  model=%s",
-        result.original_tokens,
-        result.compressed_tokens,
+        "Compressed  words=%d→%d  ratio=%.2f  strategy=%s",
+        result.total_original_tokens,
+        result.total_compressed_tokens,
         result.compression_ratio,
-        result.model_used,
+        result.strategy_used,
     )
 
     return CompressResponse(
         compressed=result.compressed,
-        original_tokens=result.original_tokens,
-        compressed_tokens=result.compressed_tokens,
+        original_tokens=result.total_original_tokens,
+        compressed_tokens=result.total_compressed_tokens,
         compression_ratio=result.compression_ratio,
         skipped=False,
-        model_id=result.model_used,
+        model_id=str(result.strategy_used),
     )

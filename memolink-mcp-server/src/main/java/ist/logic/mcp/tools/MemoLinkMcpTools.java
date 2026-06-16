@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * MCP tools exposed via Spring AI MCP server.
  *
@@ -48,6 +50,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class MemoLinkMcpTools {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final GraphHolder               holder;
     private final GraphTraversalService     traversalService;
@@ -79,7 +83,7 @@ public class MemoLinkMcpTools {
             return formatSearchResults(holder.getSearchService().hybridSearch(
                     query, embeddingService, 10, holder.getGraph()::getMdFile));
         } catch (IOException e) {
-            return "Error searching files: " + e.getMessage();
+            return toJson(Map.of("error", "Error searching files: " + e.getMessage()));
         }
     }
 
@@ -91,7 +95,7 @@ public class MemoLinkMcpTools {
     @Tool(description = "Get full markdown content, tags, and links for a file by its ID.")
     public String get_md_file(String file_id) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
-        if (mdFile == null) return "File not found.";
+        if (mdFile == null) return toJson(Map.of("error", "File not found."));
         mdFile.recordAccess();   // Capability 5: metadata ranking
         NoteDetail detail = NoteDetail.from(mdFile);
         
@@ -126,7 +130,7 @@ public class MemoLinkMcpTools {
     @Tool(description = "Get a specific heading section from an md file.")
     public String get_md_file_section(String file_id, String heading) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
-        if (mdFile == null) return "File not found.";
+        if (mdFile == null) return toJson(Map.of("error", "File not found."));
         mdFile.recordAccess();
         String content = mdFile.getContent();
         
@@ -161,23 +165,28 @@ public class MemoLinkMcpTools {
         }
         
         if (!inSection) {
-            return "Heading '" + heading + "' not found in file.";
+            return toJson(Map.of("error", "Heading '" + heading + "' not found in file."));
         }
         
         String extracted = section.toString().trim();
         String stripped = stopWordFilterService.strip(extracted);
-        return headroomService.compress(stripped);
+        String compressed = headroomService.compress(stripped);
+        return toJson(Map.of(
+            "fileId", file_id,
+            "heading", heading,
+            "text", compressed
+        ));
     }
 
     @Tool(description = "Pure semantic vector search. Returns matching file IDs and excerpts.")
     public String semantic_search(String query) {
-        if (!embeddingService.isAvailable()) return "Semantic search is disabled (model not available).";
+        if (!embeddingService.isAvailable()) return toJson(Map.of("error", "Semantic search is disabled (model not available)."));
         float[] qEmb = embeddingService.embed(query);
-        if (qEmb == null) return "Failed to generate embedding for query.";
+        if (qEmb == null) return toJson(Map.of("error", "Failed to generate embedding for query."));
         try {
             return formatSearchResults(holder.getSearchService().semanticSearch(qEmb, 10));
         } catch (IOException e) {
-            return "Error during semantic search: " + e.getMessage();
+            return toJson(Map.of("error", "Error during semantic search: " + e.getMessage()));
         }
     }
 
@@ -186,7 +195,7 @@ public class MemoLinkMcpTools {
         MdFileMetadata m = holder.getGraph().getMdFile(file_id);
         if (m != null) m.recordAccess();
         GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), file_id);
-        if (ctx == null) return "File not found in graph.";
+        if (ctx == null) return toJson(Map.of("error", "File not found in graph."));
         // Compress the focal note's body; neighbour summaries are already short
         String compressedBody = headroomService.compress(ctx.body());
         if (compressedBody != ctx.body()) {
@@ -201,7 +210,7 @@ public class MemoLinkMcpTools {
     @Tool(description = "Find shortest path of connected notes between from_id and to_id.")
     public String find_path_between_notes(String from_id, String to_id) {
         List<String> path = traversalService.findPath(holder.getGraph(), from_id, to_id);
-        if (path.isEmpty()) return "No path found between " + from_id + " and " + to_id + ".";
+        if (path.isEmpty()) return toJson(Map.of("error", "No path found between " + from_id + " and " + to_id + "."));
         return formatStringList(path);
     }
 
@@ -216,7 +225,7 @@ public class MemoLinkMcpTools {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
         if (Files.exists(target)) {
-            return "File already exists: " + normalizedId + ". Use update_md_file to modify it.";
+            return toJson(Map.of("error", "File already exists: " + normalizedId + ". Use update_md_file to modify it."));
         }
         try {
             List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wiki_links);
@@ -226,10 +235,13 @@ public class MemoLinkMcpTools {
             String autoLinked = allLinks.stream()
                     .filter(l -> wiki_links == null || !wiki_links.contains(l))
                     .collect(Collectors.joining(", "));
-            return "Created: " + normalizedId +
-                    (autoLinked.isBlank() ? "" : " (auto-linked: " + autoLinked + ")");
+            return toJson(Map.of(
+                "status", "success",
+                "message", "Created: " + normalizedId,
+                "autoLinked", autoLinked
+            ));
         } catch (IOException e) {
-            return "Failed to create file: " + e.getMessage();
+            return toJson(Map.of("error", "Failed to create file: " + e.getMessage()));
         }
     }
 
@@ -251,10 +263,13 @@ public class MemoLinkMcpTools {
             String autoLinked = allLinks.stream()
                     .filter(l -> wiki_links == null || !wiki_links.contains(l))
                     .collect(Collectors.joining(", "));
-            return "Updated: " + normalizedId +
-                    (autoLinked.isBlank() ? "" : " (auto-linked: " + autoLinked + ")");
+            return toJson(Map.of(
+                "status", "success",
+                "message", "Updated: " + normalizedId,
+                "autoLinked", autoLinked
+            ));
         } catch (IOException e) {
-            return "Failed to update file: " + e.getMessage();
+            return toJson(Map.of("error", "Failed to update file: " + e.getMessage()));
         }
     }
 
@@ -264,13 +279,13 @@ public class MemoLinkMcpTools {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
         if (!Files.exists(target)) {
-            return "File not found: " + normalizedId;
+            return toJson(Map.of("error", "File not found: " + normalizedId));
         }
         try {
             Files.delete(target);
-            return "Deleted: " + normalizedId;
+            return toJson(Map.of("status", "success", "message", "Deleted: " + normalizedId));
         } catch (IOException e) {
-            return "Failed to delete file: " + e.getMessage();
+            return toJson(Map.of("error", "Failed to delete file: " + e.getMessage()));
         }
     }
 
@@ -279,7 +294,7 @@ public class MemoLinkMcpTools {
     public String set_note_importance(String file_id, int importance) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         MdFileMetadata m = holder.getGraph().getMdFile(normalizedId);
-        if (m == null) return "File not found: " + normalizedId;
+        if (m == null) return toJson(Map.of("error", "File not found: " + normalizedId));
         int clamped = Math.max(0, Math.min(10, importance));
         m.setImportance(clamped);
         // Persist into frontmatter by re-reading + updating the file
@@ -288,71 +303,48 @@ public class MemoLinkMcpTools {
             String content = Files.readString(target);
             String updated = setFrontmatterField(content, "importance", String.valueOf(clamped));
             Files.writeString(target, updated, StandardOpenOption.TRUNCATE_EXISTING);
-            return "Importance set to " + clamped + " for: " + normalizedId;
+            return toJson(Map.of("status", "success", "message", "Importance set to " + clamped + " for: " + normalizedId));
         } catch (IOException e) {
-            return "Importance updated in memory but could not persist: " + e.getMessage();
+            return toJson(Map.of("error", "Importance updated in memory but could not persist: " + e.getMessage()));
         }
     }
 
-    @Tool(description = "Returns summary of the vault: total notes, top tags, and highly connected notes.")
+    @Tool(description = "Returns summary of the vault: total notes, top tags, and highly connected notes. Returns JSON.")
     public String get_memory_summary() {
         var graph = holder.getGraph();
         var allNotes = graph.getAllMdFiles();
 
-        // Top tags
         Map<String, Long> tagCounts = new java.util.TreeMap<>();
-        allNotes.forEach(n -> n.getTags().forEach(t ->
-                tagCounts.merge(t, 1L, Long::sum)));
+        allNotes.forEach(n -> n.getTags().forEach(t -> tagCounts.merge(t, 1L, Long::sum)));
         List<Map<String, Object>> topTags = tagCounts.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .limit(10)
                 .map(e -> Map.<String, Object>of("tag", e.getKey(), "count", e.getValue()))
                 .toList();
 
-        // Most connected notes
         List<Map<String, Object>> mostConnected = allNotes.stream()
-                .map(n -> Map.<String, Object>of(
-                        "id", n.getId(),
-                        "connections", graph.getNeighborEdges(n.getId()).size()))
-                .sorted(Comparator.<Map<String, Object>, Integer>comparing(
-                        m -> (Integer) m.get("connections")).reversed())
+                .map(n -> Map.<String, Object>of("id", n.getId(), "connections", graph.getNeighborEdges(n.getId()).size()))
+                .sorted(Comparator.<Map<String, Object>, Integer>comparing(m -> (Integer) m.get("connections")).reversed())
                 .limit(10)
                 .toList();
 
-        // Notes by importance
         List<Map<String, Object>> byImportance = allNotes.stream()
                 .filter(n -> n.getImportance() > 0)
                 .sorted(Comparator.comparingInt(MdFileMetadata::getImportance).reversed())
-                .map(n -> Map.<String, Object>of(
-                        "id", n.getId(), "importance", n.getImportance()))
+                .map(n -> Map.<String, Object>of("id", n.getId(), "importance", n.getImportance()))
                 .toList();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("# Memory Summary\n\n");
-        sb.append("- **Total Notes:** ").append(allNotes.size()).append("\n");
-        sb.append("- **Semantic Search Enabled:** ").append(embeddingService.isAvailable()).append("\n\n");
-        
-        sb.append("## Top Tags\n");
-        if (topTags.isEmpty()) sb.append("None\n");
-        for (var tag : topTags) {
-            sb.append("- ").append(tag.get("tag")).append(" (").append(tag.get("count")).append(")\n");
-        }
-        
-        sb.append("\n## Most Connected Notes\n");
-        if (mostConnected.isEmpty()) sb.append("None\n");
-        for (var n : mostConnected) {
-            sb.append("- **").append(n.get("id")).append("** (").append(n.get("connections")).append(" connections)\n");
-        }
-        
-        sb.append("\n## Important Notes\n");
-        if (byImportance.isEmpty()) sb.append("None\n");
-        for (var n : byImportance) {
-            sb.append("- **").append(n.get("id")).append("** (Importance: ").append(n.get("importance")).append(")\n");
-        }
-        return sb.toString();
+        Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        summary.put("totalNotes", allNotes.size());
+        summary.put("semanticSearchEnabled", embeddingService.isAvailable());
+        summary.put("topTags", topTags);
+        summary.put("mostConnectedNotes", mostConnected);
+        summary.put("importantNotes", byImportance);
+
+        return toJson(summary);
     }
 
-    @Tool(description = "Gather excerpts from notes related to a topic to help write a reflection summary.")
+    @Tool(description = "Gather excerpts from notes related to a topic to help write a reflection summary. Returns structured JSON.")
     public String gather_reflection_sources(String topic, int max_sources) {
         int limit = max_sources > 0 ? Math.min(max_sources, 10) : 5;
         List<SearchResult> hits;
@@ -360,119 +352,164 @@ public class MemoLinkMcpTools {
             hits = holder.getSearchService().hybridSearch(
                     topic, embeddingService, limit, holder.getGraph()::getMdFile);
         } catch (IOException e) {
-            hits = List.of();
+            return toJson(Map.of("error", "Search failed: " + e.getMessage()));
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("# Reflection Sources for: ").append(topic).append("\n\n");
         if (hits.isEmpty()) {
-            sb.append("No sources found for this topic.\n");
-            return sb.toString();
+            return toJson(Map.of("results", List.of()));
         }
 
+        List<Map<String, Object>> sources = new ArrayList<>();
         for (var r : hits) {
             MdFileMetadata m = holder.getGraph().getMdFile(r.id());
             String raw = m == null ? "" :
                     m.getContent().substring(0, Math.min(m.getContent().length(), 600));
             String excerpt = headroomService.compress(raw);
             
-            sb.append("## ").append(r.title()).append(" (").append(r.id()).append(")\n");
-            sb.append("**Score:** ").append(r.score()).append("\n\n");
-            sb.append(excerpt).append("\n\n");
+            sources.add(Map.of(
+                "id", r.id(),
+                "title", r.title(),
+                "score", Math.round(r.score() * 100.0) / 100.0,
+                "excerpt", excerpt
+            ));
         }
-        sb.append("---\n**Instruction:** Use create_md_file to write a reflection note that synthesises these sources. Tag it with #reflection and link to each source.");
-        return sb.toString();
+        
+        return toJson(Map.of(
+            "topic", topic,
+            "instruction", "Use create_md_file to write a reflection note that synthesises these sources. Tag it with #reflection and link to each source.",
+            "results", sources
+        ));
     }
 
-    @Tool(description = "Search the entire vault and return the exact relevant paragraphs to answer the query. Includes graph connections.")
+    @Tool(description = "Search the entire vault and return the exact relevant paragraphs to answer the query. Returns structured JSON data, grouped by file to avoid duplicate graph connections.")
     public String query_vault(String query) {
-        if (query == null || query.isBlank()) return "Query is empty.";
+        if (query == null || query.isBlank()) return "{\"error\": \"Query is empty.\"}";
 
         float[] queryVector = embeddingService.embed(query);
-        if (queryVector == null) return "Embedding service unavailable.";
+        if (queryVector == null) return "{\"error\": \"Embedding service unavailable.\"}";
 
         List<ist.logic.core.service.GraphSearchService.ChunkSearchResult> hits;
         try {
             hits = holder.getSearchService().searchChunks(queryVector, 5);
         } catch (IOException e) {
-            return "Search failed: " + e.getMessage();
+            return "{\"error\": \"Search failed: " + e.getMessage() + "\"}";
         }
 
-        if (hits.isEmpty()) return "No relevant notes found for your query.";
+        if (hits.isEmpty()) return "{\"results\": []}";
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("### Search Results for: ").append(query).append("\n\n");
-        for (ist.logic.core.service.GraphSearchService.ChunkSearchResult hit : hits) {
-            MdFileMetadata m = holder.getGraph().getMdFile(hit.fileId());
-            if (m == null || m.getChunkTexts() == null || hit.chunkIndex() >= m.getChunkTexts().size()) continue;
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("query", query);
+        List<Map<String, Object>> resultsList = new ArrayList<>();
 
-            String text = m.getChunkTexts().get(hit.chunkIndex());
-            String compressed = headroomService.compress(stopWordFilterService.strip(text));
+        // Group hits by fileId to avoid repeating graph connections for the same file
+        Map<String, List<ist.logic.core.service.GraphSearchService.ChunkSearchResult>> groupedHits = hits.stream()
+                .collect(Collectors.groupingBy(ist.logic.core.service.GraphSearchService.ChunkSearchResult::fileId,
+                        java.util.LinkedHashMap::new, Collectors.toList()));
 
-            // Get neighbors for Graph-Augmented RAG
-            ist.logic.core.model.GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), hit.fileId());
+        for (Map.Entry<String, List<ist.logic.core.service.GraphSearchService.ChunkSearchResult>> entry : groupedHits.entrySet()) {
+            String fileId = entry.getKey();
+            List<ist.logic.core.service.GraphSearchService.ChunkSearchResult> fileHits = entry.getValue();
+
+            MdFileMetadata m = holder.getGraph().getMdFile(fileId);
+            if (m == null || m.getChunkTexts() == null) continue;
+
+            Map<String, Object> fileResult = new java.util.LinkedHashMap<>();
+            fileResult.put("fileId", fileId);
+
+            // Get neighbors for Graph-Augmented RAG once per file
+            ist.logic.core.model.GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), fileId);
             List<String> links = ctx.neighbors().stream()
-                .map(n -> "[[" + n.id() + "]]")
-                .toList();
+                    .map(n -> n.id())
+                    .toList();
+            fileResult.put("graphConnections", links);
 
-            sb.append("#### File: ").append(hit.fileId()).append(" (Score: ")
-              .append(String.format("%.2f", hit.score())).append(")\n");
-            sb.append("> ").append(compressed.replace("\n", "\n> ")).append("\n\n");
-            if (!links.isEmpty()) {
-                sb.append("*Graph Connections:* Links to ").append(String.join(", ", links)).append("\n\n");
+            List<Map<String, Object>> chunksList = new ArrayList<>();
+            java.util.Set<Integer> seenIndices = new java.util.HashSet<>();
+
+            for (ist.logic.core.service.GraphSearchService.ChunkSearchResult hit : fileHits) {
+                if (hit.chunkIndex() >= m.getChunkTexts().size()) continue;
+                if (!seenIndices.add(hit.chunkIndex())) continue; // deduplicate chunks from same file
+
+                String text = m.getChunkTexts().get(hit.chunkIndex());
+                String compressed = headroomService.compress(stopWordFilterService.strip(text));
+
+                Map<String, Object> chunkObj = new java.util.LinkedHashMap<>();
+                chunkObj.put("score", Math.round(hit.score() * 100.0) / 100.0);
+                chunkObj.put("chunkIndex", hit.chunkIndex());
+                chunkObj.put("text", compressed);
+                chunksList.add(chunkObj);
             }
-            sb.append("---\n\n");
+            fileResult.put("chunks", chunksList);
+            resultsList.add(fileResult);
         }
+        
+        response.put("results", resultsList);
 
-        return sb.toString();
+        try {
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(response);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return "{\"error\": \"Failed to serialize JSON\"}";
+        }
     }
 
     // ── Formatting helpers for token efficiency ──────────────────────────────
 
+    private String toJson(Object obj) {
+        try {
+            return MAPPER.writeValueAsString(obj);
+        } catch (Exception e) {
+            return "{\"error\": \"Serialization failed\"}";
+        }
+    }
+
     private String formatSearchResults(List<SearchResult> results) {
-        if (results == null || results.isEmpty()) return "No results found.";
-        return results.stream()
-                .map(r -> String.format("- **%s** (%s) - Score: %.2f", r.id(), r.title(), r.score()))
-                .collect(Collectors.joining("\n"));
+        if (results == null || results.isEmpty()) return "{\"results\": []}";
+        List<Map<String, Object>> mapped = results.stream()
+            .map(r -> Map.<String, Object>of(
+                "id", r.id(), 
+                "title", r.title(), 
+                "score", Math.round(r.score() * 100.0) / 100.0))
+            .toList();
+        return toJson(Map.of("results", mapped));
     }
 
     private String formatStringList(List<String> list) {
-        if (list == null || list.isEmpty()) return "None";
-        return list.stream().map(s -> "- " + s).collect(Collectors.joining("\n"));
+        if (list == null) list = List.of();
+        return toJson(Map.of("items", list));
     }
 
     private String formatNoteDetail(NoteDetail detail) {
-        if (detail == null) return "File not found.";
-        StringBuilder sb = new StringBuilder();
-        sb.append("# ").append(detail.title()).append("\n\n");
-        if (detail.tags() != null && !detail.tags().isEmpty()) {
-            sb.append("**Tags:** ").append(String.join(", ", detail.tags())).append("\n");
-        }
-        if (detail.wikiLinks() != null && !detail.wikiLinks().isEmpty()) {
-            sb.append("**Links:** ").append(String.join(", ", detail.wikiLinks())).append("\n");
-        }
-        sb.append("\n").append(detail.body());
-        return sb.toString();
+        if (detail == null) return "{\"error\": \"File not found.\"}";
+        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("id", detail.id());
+        map.put("title", detail.title());
+        map.put("tags", detail.tags() == null ? List.of() : detail.tags());
+        map.put("links", detail.wikiLinks() == null ? List.of() : detail.wikiLinks());
+        map.put("body", detail.body());
+        return toJson(map);
     }
 
     private String formatGraphContext(GraphContextResult ctx) {
-        if (ctx == null) return "File not found.";
-        StringBuilder sb = new StringBuilder();
-        sb.append("# ").append(ctx.title()).append("\n\n");
-        if (ctx.tags() != null && !ctx.tags().isEmpty()) {
-            sb.append("**Tags:** ").append(String.join(", ", ctx.tags())).append("\n");
-        }
-        sb.append("\n").append(ctx.body()).append("\n\n");
-        sb.append("## Neighbors\n");
-        if (ctx.neighbors() == null || ctx.neighbors().isEmpty()) {
-            sb.append("No neighbors found.\n");
-        } else {
+        if (ctx == null) return "{\"error\": \"File not found.\"}";
+        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("id", ctx.id());
+        map.put("title", ctx.title());
+        map.put("tags", ctx.tags() == null ? List.of() : ctx.tags());
+        map.put("body", ctx.body());
+        
+        List<Map<String, Object>> neighbors = new ArrayList<>();
+        if (ctx.neighbors() != null) {
             for (var n : ctx.neighbors()) {
-                sb.append(String.format("- **%s** (%s) [Type: %s, Weight: %d]\n", 
-                        n.id(), n.title(), n.relationType(), n.edgeWeight()));
+                neighbors.add(Map.of(
+                    "id", n.id(),
+                    "title", n.title(),
+                    "type", n.relationType(),
+                    "weight", n.edgeWeight()
+                ));
             }
         }
-        return sb.toString();
+        map.put("neighbors", neighbors);
+        return toJson(map);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
