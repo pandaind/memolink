@@ -416,14 +416,7 @@ public class MemoLinkMcpTools {
             Map<String, Object> fileResult = new java.util.LinkedHashMap<>();
             fileResult.put("fileId", fileId);
 
-            // Get neighbors for Graph-Augmented RAG once per file
-            ist.logic.core.model.GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), fileId);
-            List<String> links = ctx.neighbors().stream()
-                    .map(n -> n.id())
-                    .toList();
-            fileResult.put("graphConnections", links);
-
-            List<Map<String, Object>> chunksList = new ArrayList<>();
+            List<Map<String, Object>> excerpts = new ArrayList<>();
             java.util.Set<Integer> seenIndices = new java.util.HashSet<>();
 
             for (ist.logic.core.service.GraphSearchService.ChunkSearchResult hit : fileHits) {
@@ -432,14 +425,13 @@ public class MemoLinkMcpTools {
 
                 String text = m.getChunkTexts().get(hit.chunkIndex());
                 String compressed = headroomService.compress(stopWordFilterService.strip(text));
-
+                
                 Map<String, Object> chunkObj = new java.util.LinkedHashMap<>();
                 chunkObj.put("score", Math.round(hit.score() * 100.0) / 100.0);
-                chunkObj.put("chunkIndex", hit.chunkIndex());
                 chunkObj.put("text", compressed);
-                chunksList.add(chunkObj);
+                excerpts.add(chunkObj);
             }
-            fileResult.put("chunks", chunksList);
+            fileResult.put("excerpts", excerpts);
             resultsList.add(fileResult);
         }
         
