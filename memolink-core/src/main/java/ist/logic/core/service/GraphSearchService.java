@@ -124,7 +124,7 @@ public class GraphSearchService implements Closeable {
                         Document cDoc = new Document();
                         cDoc.add(new StringField("fileId", note.getId(), Field.Store.YES));
                         cDoc.add(new StoredField("chunkIndex", i));
-                        cDoc.add(new KnnFloatVectorField("chunk_embedding", note.getChunkEmbeddings().get(i), VectorSimilarityFunction.COSINE));
+                        cDoc.add(new KnnFloatVectorField("embedding", note.getChunkEmbeddings().get(i), VectorSimilarityFunction.COSINE));
                         chunkWriter.addDocument(cDoc);
                     }
                 }

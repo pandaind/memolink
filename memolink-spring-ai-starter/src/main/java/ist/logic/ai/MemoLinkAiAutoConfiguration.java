@@ -58,7 +58,6 @@ public class MemoLinkAiAutoConfiguration {
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(holder.getGraph(), changedPaths);
-                boolean useDisk = "disk".equalsIgnoreCase(props.getLucene().getStorage());
                 Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
                 GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
                 if (useDisk) {
