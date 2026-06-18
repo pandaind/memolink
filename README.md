@@ -108,16 +108,26 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
        "command": "java",
        "args": ["-jar", "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"],
        "env": {
-         "MEMOLINK_VAULT_DIR": "/path/to/your/vault"
+         "MEMOLINK_VAULT_DIR": "/path/to/your/vault",
+         "MEMOLINK_LUCENE_STORAGE": "disk"
        }
      }
    }
  }
  ```
  
- Restart Claude Desktop. It will now have access to your knowledge graph through the MCP tools: `search_md_files` (which defaults to semantic search), `get_related_md_files`, `get_md_file`, `traverse_graph`, and more.
+ Restart Claude Desktop. It will now have access to your knowledge graph through the MCP tools: `search_md_files` (which defaults to semantic search), `get_related_md_files`, `get_md_file`, `traverse_graph`, `query_vault`, and more.
 
  For comprehensive guidelines on how an AI should use these tools, please refer to the [Agent Instructions](AGENT_INSTRUCTIONS.md).
+
+ #### Dual-Mode Architecture (Memory vs Disk)
+
+ Memolink supports scaling up to 100,000 files using a dual-mode caching architecture.
+
+ - **Memory Mode (Default):** Ideal for vaults <10,000 files. Loads embeddings into memory using `embeddings.json` and uses an in-memory Lucene index (`ByteBuffersDirectory`) for maximum query speed.
+ - **Disk Mode:** Ideal for large vaults (>10,000 files). Bypasses memory loading entirely, storing the Lucene index persistently on disk in `.memolink/lucene` and tracking incremental updates via a lightweight `.memolink/timestamps.json`.
+ 
+ To enable Disk Mode, set `memolink.lucene.storage=disk` in your `application.yml` or the `MEMOLINK_LUCENE_STORAGE=disk` environment variable.
 
  #### 100% Local Semantic Embeddings
 
@@ -140,6 +150,19 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
 | `GET /api/search?q={query}` | Lucene full-text search; returns `[{id, title, score}]` |
 | `GET /api/notes/{id}` | Structured note: `{id, title, tags, headings, wikiLinks, body}` |
 | `GET /api/traverse/{id}?depth=2` | BFS traversal from a node; returns connected file IDs |
+
+---
+
+## MCP Tools
+
+The `memolink-mcp-server` exposes the following key tools to LLM clients:
+
+- `query_vault(query)`: Semantic chunk search. Returns highly targeted, compressed paragraphs (with semantic similarity scores) that directly answer the query without reading whole files.
+- `search_md_files(query)`: Hybrid keyword + semantic search for entire files.
+- `get_graph_context(file_id)`: Fetches a note along with its 1-hop GraphRAG context (summaries of immediate neighbors).
+- `find_path_between_notes(from_id, to_id)`: Finds the shortest path across your knowledge graph.
+- `get_md_file(file_id)`: Retrieves the full content of a file.
+- CRUD Operations: `create_md_file`, `update_md_file`, `delete_md_file` (Requires write permission).
 
 ---
 

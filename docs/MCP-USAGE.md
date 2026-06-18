@@ -58,6 +58,7 @@ Create `~/.memolink/.env`:
 mkdir -p ~/.memolink
 cat > ~/.memolink/.env << 'EOF'
 MEMOLINK_VAULT_DIR=/Users/your-name/vault
+MEMOLINK_LUCENE_STORAGE=disk
 MEMOLINK_HTTP_PORT=8765
 MEMOLINK_KEY_VSCODE=sk-vscode-REPLACE_ME
 MEMOLINK_KEY_CLAUDE=sk-claude-REPLACE_ME
@@ -99,6 +100,7 @@ mvn package -pl memolink-mcp-server -am -DskipTests -q
 
 ```bash
 MEMOLINK_VAULT_DIR=~/vault \
+MEMOLINK_LUCENE_STORAGE=disk \
   java --enable-native-access=ALL-UNNAMED \
        -jar memolink-mcp-server/target/memolink-mcp-server-0.1.0-SNAPSHOT.jar
 ```
@@ -130,6 +132,7 @@ Or pass everything inline:
 
 ```bash
 MEMOLINK_VAULT_DIR=~/vault \
+MEMOLINK_LUCENE_STORAGE=disk \
 MEMOLINK_HTTP_PORT=8765 \
 MEMOLINK_KEY_VSCODE=sk-vscode-abc123 \
 MEMOLINK_KEY_CLAUDE=sk-claude-xyz789 \
@@ -177,7 +180,8 @@ Missing or invalid key returns:
         "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"
       ],
       "env": {
-        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault"
+        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault",
+        "MEMOLINK_LUCENE_STORAGE": "disk"
       }
     }
   }
@@ -228,7 +232,8 @@ File: `~/Library/Application Support/Claude/claude_desktop_config.json`
         "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"
       ],
       "env": {
-        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault"
+        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault",
+        "MEMOLINK_LUCENE_STORAGE": "disk"
       }
     }
   }
@@ -258,7 +263,8 @@ File: `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`)
         "/path/to/memolink-mcp-server-0.1.0-SNAPSHOT.jar"
       ],
       "env": {
-        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault"
+        "MEMOLINK_VAULT_DIR": "/Users/your-name/vault",
+        "MEMOLINK_LUCENE_STORAGE": "disk"
       }
     }
   }
@@ -286,6 +292,7 @@ File: `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`)
 
 | Tool | Role needed | Description |
 |---|---|---|
+| `query_vault` | READ | Semantic chunk search. Returns highly targeted paragraphs answering a query |
 | `list_md_files` | READ | List all note IDs |
 | `get_md_file` | READ | Read a note's content, tags, wiki-links |
 | `search_md_files` | READ | Semantic vector search (falls back to BM25) |
@@ -352,6 +359,7 @@ memolink:
 # Generate all keys at once and write to .env
 mkdir -p ~/.memolink
 printf "MEMOLINK_VAULT_DIR=%s\n" "$HOME/vault" > ~/.memolink/.env
+printf "MEMOLINK_LUCENE_STORAGE=disk\n" >> ~/.memolink/.env
 printf "MEMOLINK_HTTP_PORT=8765\n" >> ~/.memolink/.env
 printf "MEMOLINK_KEY_VSCODE=sk-vscode-%s\n"  "$(openssl rand -base64 24 | tr -d '=+/')" >> ~/.memolink/.env
 printf "MEMOLINK_KEY_CLAUDE=sk-claude-%s\n"  "$(openssl rand -base64 24 | tr -d '=+/')" >> ~/.memolink/.env
