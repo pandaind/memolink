@@ -6,6 +6,7 @@ import ist.logic.core.model.NoteDetail;
 import ist.logic.core.model.SearchResult;
 import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphHolder;
+import ist.logic.core.service.GraphSearchService.ChunkSearchResult;
 import ist.logic.core.service.GraphTraversalService;
 import ist.logic.core.service.MdFileParserService;
 import ist.logic.mcp.service.HeadroomCompressionService;
@@ -21,28 +22,33 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * MCP tools exposed via Spring AI MCP server.
+ * MCP tools exposed to LLM clients via the Spring AI MCP server.
  *
- * The underlying {@link GraphHolder} is updated in-place by
+ * <p>The underlying {@link GraphHolder} is updated in-place by
  * {@link ist.logic.core.service.GraphWatchService} whenever markdown files
- * change on disk, so Claude sees up-to-date content without server restarts.
+ * change on disk, so the LLM sees up-to-date content without server restarts.
  *
- * Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):
+ * <p>Claude Desktop config
+ * ({@code ~/Library/Application Support/Claude/claude_desktop_config.json}):
  * <pre>
  * {
  *   "mcpServers": {
  *     "memolink": {
  *       "command": "java",
  *       "args": ["-jar", "/path/to/memolink-mcp-server.jar"],
- *       "env": { "MDGRAPH_NOTES_DIR": "/path/to/your/notes" }
+ *       "env": { "MEMOLINK_VAULT_DIR": "/path/to/your/vault" }
  *     }
  *   }
  * }
@@ -314,7 +320,7 @@ public class MemoLinkMcpTools {
         var graph = holder.getGraph();
         var allNotes = graph.getAllMdFiles();
 
-        Map<String, Long> tagCounts = new java.util.TreeMap<>();
+        Map<String, Long> tagCounts = new TreeMap<>();
         allNotes.forEach(n -> n.getTags().forEach(t -> tagCounts.merge(t, 1L, Long::sum)));
         List<Map<String, Object>> topTags = tagCounts.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
@@ -334,7 +340,7 @@ public class MemoLinkMcpTools {
                 .map(n -> Map.<String, Object>of("id", n.getId(), "importance", n.getImportance()))
                 .toList();
 
-        Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("totalNotes", allNotes.size());
         summary.put("semanticSearchEnabled", embeddingService.isAvailable());
         summary.put("topTags", topTags);
@@ -375,9 +381,9 @@ public class MemoLinkMcpTools {
         }
         
         return toJson(Map.of(
-            "topic", topic,
-            "instruction", "Use create_md_file to write a reflection note that synthesises these sources. Tag it with #reflection and link to each source.",
-            "results", sources
+            "topic",       topic,
+            "instruction", "Use create_memory to write a reflection that synthesises these sources. Tag it with #reflection and link to each source.",
+            "results",     sources
         ));
     }
 
@@ -388,7 +394,7 @@ public class MemoLinkMcpTools {
         float[] queryVector = embeddingService.embed(query);
         if (queryVector == null) return "{\"error\": \"Embedding service unavailable.\"}";
 
-        List<ist.logic.core.service.GraphSearchService.ChunkSearchResult> hits;
+        List<ChunkSearchResult> hits;
         try {
             hits = holder.getSearchService().searchChunks(queryVector, 5);
         } catch (IOException e) {
@@ -397,36 +403,36 @@ public class MemoLinkMcpTools {
 
         if (hits.isEmpty()) return "{\"results\": []}";
 
-        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        Map<String, Object> response = new LinkedHashMap<>();
         response.put("query", query);
         List<Map<String, Object>> resultsList = new ArrayList<>();
 
-        // Group hits by fileId to avoid repeating graph connections for the same file
-        Map<String, List<ist.logic.core.service.GraphSearchService.ChunkSearchResult>> groupedHits = hits.stream()
-                .collect(Collectors.groupingBy(ist.logic.core.service.GraphSearchService.ChunkSearchResult::fileId,
-                        java.util.LinkedHashMap::new, Collectors.toList()));
+        // Group hits by fileId so each file appears once in results
+        Map<String, List<ChunkSearchResult>> groupedHits = hits.stream()
+                .collect(Collectors.groupingBy(ChunkSearchResult::fileId,
+                        LinkedHashMap::new, Collectors.toList()));
 
-        for (Map.Entry<String, List<ist.logic.core.service.GraphSearchService.ChunkSearchResult>> entry : groupedHits.entrySet()) {
+        for (Map.Entry<String, List<ChunkSearchResult>> entry : groupedHits.entrySet()) {
             String fileId = entry.getKey();
-            List<ist.logic.core.service.GraphSearchService.ChunkSearchResult> fileHits = entry.getValue();
+            List<ChunkSearchResult> fileHits = entry.getValue();
 
             MdFileMetadata m = holder.getGraph().getMdFile(fileId);
             if (m == null || m.getChunkTexts() == null) continue;
 
-            Map<String, Object> fileResult = new java.util.LinkedHashMap<>();
+            Map<String, Object> fileResult = new LinkedHashMap<>();
             fileResult.put("fileId", fileId);
 
             List<Map<String, Object>> excerpts = new ArrayList<>();
-            java.util.Set<Integer> seenIndices = new java.util.HashSet<>();
+            HashSet<Integer> seenIndices = new HashSet<>();
 
-            for (ist.logic.core.service.GraphSearchService.ChunkSearchResult hit : fileHits) {
+            for (ChunkSearchResult hit : fileHits) {
                 if (hit.chunkIndex() >= m.getChunkTexts().size()) continue;
-                if (!seenIndices.add(hit.chunkIndex())) continue; // deduplicate chunks from same file
+                if (!seenIndices.add(hit.chunkIndex())) continue;
 
-                String text = m.getChunkTexts().get(hit.chunkIndex());
+                String text       = m.getChunkTexts().get(hit.chunkIndex());
                 String compressed = headroomService.compress(stopWordFilterService.strip(text));
-                
-                Map<String, Object> chunkObj = new java.util.LinkedHashMap<>();
+
+                Map<String, Object> chunkObj = new LinkedHashMap<>();
                 chunkObj.put("score", Math.round(hit.score() * 100.0) / 100.0);
                 chunkObj.put("text", compressed);
                 excerpts.add(chunkObj);
@@ -439,7 +445,7 @@ public class MemoLinkMcpTools {
 
         try {
             return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(response);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (IOException e) {
             return "{\"error\": \"Failed to serialize JSON\"}";
         }
     }
@@ -472,30 +478,29 @@ public class MemoLinkMcpTools {
 
     private String formatNoteDetail(NoteDetail detail) {
         if (detail == null) return "{\"error\": \"File not found.\"}";
-        Map<String, Object> map = new java.util.LinkedHashMap<>();
-        map.put("id", detail.id());
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id",    detail.id());
         map.put("title", detail.title());
-        map.put("tags", detail.tags() == null ? List.of() : detail.tags());
+        map.put("tags",  detail.tags()     == null ? List.of() : detail.tags());
         map.put("links", detail.wikiLinks() == null ? List.of() : detail.wikiLinks());
-        map.put("body", detail.body());
+        map.put("body",  detail.body());
         return toJson(map);
     }
 
     private String formatGraphContext(GraphContextResult ctx) {
         if (ctx == null) return "{\"error\": \"File not found.\"}";
-        Map<String, Object> map = new java.util.LinkedHashMap<>();
-        map.put("id", ctx.id());
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id",    ctx.id());
         map.put("title", ctx.title());
-        map.put("tags", ctx.tags() == null ? List.of() : ctx.tags());
-        map.put("body", ctx.body());
-        
+        map.put("tags",  ctx.tags() == null ? List.of() : ctx.tags());
+        map.put("body",  ctx.body());
         List<Map<String, Object>> neighbors = new ArrayList<>();
         if (ctx.neighbors() != null) {
             for (var n : ctx.neighbors()) {
                 neighbors.add(Map.of(
-                    "id", n.id(),
-                    "title", n.title(),
-                    "type", n.relationType(),
+                    "id",     n.id(),
+                    "title",  n.title(),
+                    "type",   n.relationType(),
                     "weight", n.edgeWeight()
                 ));
             }

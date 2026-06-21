@@ -29,7 +29,7 @@ public class MemoLinkMcpConfig {
     private static final Logger log = LoggerFactory.getLogger(MemoLinkMcpConfig.class);
 
     private static final String MODEL_RESOURCE_BASE = "classpath:models/all-MiniLM-L6-v2/";
-    private static final String MODEL_CACHE_DIR     = ".memolink/models/all-MiniLM-L6-v2";
+    private static final String MODEL_CACHE_SUBDIR  = ".memolink/models/all-MiniLM-L6-v2";
 
     @Value("${memolink.vault-dir:${user.home}/vault}")
     private String vaultDir;
@@ -37,10 +37,10 @@ public class MemoLinkMcpConfig {
     @Value("${memolink.lucene.storage:memory}")
     private String luceneStorage;
 
+    // ── Beans ─────────────────────────────────────────────────────────────────
+
     @Bean(destroyMethod = "close")
     public EmbeddingService embeddingService(ResourceLoader resourceLoader) {
-        // Extract model files synchronously (no-op if already on disk — fast).
-        // This ensures cacheDir contains model.onnx before EmbeddingService starts polling.
         Path cacheDir = extractModelToCache(resourceLoader);
         return new EmbeddingService(cacheDir);
     }
@@ -48,30 +48,26 @@ public class MemoLinkMcpConfig {
     @Bean
     public GraphBuilderService graphBuilderService() {
         GraphBuilderService builder = new GraphBuilderService();
-        boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
-        builder.setUseDisk(useDisk);
+        builder.setUseDisk(isUseDisk());
         return builder;
     }
 
     @Bean
     public GraphHolder graphHolder(GraphBuilderService builder,
                                    EmbeddingService embeddingService) throws IOException {
-        Path rootDir = Path.of(vaultDir).toAbsolutePath();
-        KnowledgeGraph graph = builder.build(rootDir, embeddingService);
-        
-        boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
-        Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
-        GraphSearchService searchService = new GraphSearchService(useDisk, luceneDir);
-        
+        Path rootDir          = vaultRootDir();
+        KnowledgeGraph graph  = builder.build(rootDir, embeddingService);
+        GraphSearchService searchService = new GraphSearchService(isUseDisk(), luceneDir(rootDir));
         searchService.index(graph.getAllMdFiles());
 
+        // Compute missing embeddings asynchronously so startup is not blocked
         Thread.ofVirtual().start(() -> {
             try {
                 embeddingService.awaitReady(60_000);
                 builder.computeMissingEmbeddings(graph, embeddingService);
                 searchService.index(graph.getAllMdFiles());
             } catch (Exception e) {
-                // ignore
+                log.warn("Background embedding computation failed", e);
             }
         });
 
@@ -82,17 +78,15 @@ public class MemoLinkMcpConfig {
     public GraphWatchService graphWatchService(GraphHolder holder,
                                                GraphBuilderService builder,
                                                EmbeddingService embeddingService) throws IOException {
-        Path rootDir = Path.of(vaultDir).toAbsolutePath();
+        Path rootDir = vaultRootDir();
         return new GraphWatchService(rootDir, changedPaths -> {
             try {
                 KnowledgeGraph newGraph = builder.buildIncremental(
                         holder.getGraph(), changedPaths, embeddingService);
-                boolean useDisk = "disk".equalsIgnoreCase(luceneStorage);
-                Path luceneDir = rootDir.resolve(".memolink").resolve("lucene");
-                GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
-                if (useDisk) {
+                GraphSearchService newSearch = new GraphSearchService(isUseDisk(), luceneDir(rootDir));
+                if (isUseDisk()) {
                     for (Path p : changedPaths) {
-                        if (!java.nio.file.Files.exists(p)) {
+                        if (!Files.exists(p)) {
                             String id = rootDir.relativize(p).toString().replace(java.io.File.separatorChar, '/');
                             newSearch.deleteFromIndex(id);
                         }
@@ -100,7 +94,9 @@ public class MemoLinkMcpConfig {
                 }
                 newSearch.index(newGraph.getAllMdFiles());
                 holder.update(newGraph, newSearch);
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                log.warn("Incremental graph rebuild failed after file change", e);
+            }
         });
     }
 
@@ -111,26 +107,35 @@ public class MemoLinkMcpConfig {
 
     @Bean
     public Path mdGraphVaultDir() {
+        return vaultRootDir();
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private boolean isUseDisk() {
+        return "disk".equalsIgnoreCase(luceneStorage);
+    }
+
+    private Path vaultRootDir() {
         return Path.of(vaultDir).toAbsolutePath();
     }
 
-    // ── Model extraction ──────────────────────────────────────────────────────
-
-
+    private static Path luceneDir(Path rootDir) {
+        return rootDir.resolve(".memolink").resolve("lucene");
+    }
 
     /**
      * Copies model files from the fat-jar classpath into
-     * {@code ~/.memolink/models/all-MiniLM-L6-v2/} so the embedding service can load them
-     * from a real filesystem path.  Skips files that already exist (no re-copy
-     * on subsequent restarts).
+     * {@code ~/.memolink/models/all-MiniLM-L6-v2/} so the embedding service
+     * can load them from a real filesystem path.
+     * Skips files that already exist (no re-copy on subsequent restarts).
      */
     private Path extractModelToCache(ResourceLoader resourceLoader) {
-        Path cacheDir = Path.of(System.getProperty("user.home"))
-                            .resolve(MODEL_CACHE_DIR);
+        Path cacheDir = Path.of(System.getProperty("user.home")).resolve(MODEL_CACHE_SUBDIR);
         try {
             Files.createDirectories(cacheDir);
-            copyIfAbsent(resourceLoader, MODEL_RESOURCE_BASE + "model.onnx",       cacheDir.resolve("model.onnx"));
-            copyIfAbsent(resourceLoader, MODEL_RESOURCE_BASE + "tokenizer.json",    cacheDir.resolve("tokenizer.json"));
+            copyIfAbsent(resourceLoader, MODEL_RESOURCE_BASE + "model.onnx",    cacheDir.resolve("model.onnx"));
+            copyIfAbsent(resourceLoader, MODEL_RESOURCE_BASE + "tokenizer.json", cacheDir.resolve("tokenizer.json"));
             log.info("Embedding model ready at: {}", cacheDir);
             return cacheDir;
         } catch (IOException e) {
@@ -153,4 +158,3 @@ public class MemoLinkMcpConfig {
         }
     }
 }
-

@@ -14,7 +14,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Auto-configures the MemoLink knowledge-graph infrastructure and the viewer
@@ -30,6 +34,8 @@ import java.nio.file.Path;
 @ConditionalOnWebApplication
 @EnableConfigurationProperties(MemoLinkViewerProperties.class)
 public class MemoLinkViewerAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoLinkViewerAutoConfiguration.class);
 
     @Bean
     @ConditionalOnMissingBean
@@ -60,7 +66,7 @@ public class MemoLinkViewerAutoConfiguration {
                 GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
                 if (useDisk) {
                     for (Path p : changedPaths) {
-                        if (!java.nio.file.Files.exists(p)) {
+                        if (!Files.exists(p)) {
                             String id = rootDir.relativize(p).toString().replace(java.io.File.separatorChar, '/');
                             newSearch.deleteFromIndex(id);
                         }
@@ -68,7 +74,9 @@ public class MemoLinkViewerAutoConfiguration {
                 }
                 newSearch.index(newGraph.getAllMdFiles());
                 registry.update(newGraph, newSearch);
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                log.warn("Incremental viewer graph rebuild failed", e);
+            }
         });
     }
 

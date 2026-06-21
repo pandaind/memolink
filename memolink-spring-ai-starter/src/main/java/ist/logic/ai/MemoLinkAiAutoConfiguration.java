@@ -15,7 +15,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Auto-configures the MemoLink knowledge-graph infrastructure and registers
@@ -32,6 +36,8 @@ import java.nio.file.Path;
 @ConditionalOnClass(Tool.class)
 @EnableConfigurationProperties(MemoLinkAiProperties.class)
 public class MemoLinkAiAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoLinkAiAutoConfiguration.class);
 
     @Bean
     @ConditionalOnMissingBean
@@ -62,7 +68,7 @@ public class MemoLinkAiAutoConfiguration {
                 GraphSearchService newSearch = new GraphSearchService(useDisk, luceneDir);
                 if (useDisk) {
                     for (Path p : changedPaths) {
-                        if (!java.nio.file.Files.exists(p)) {
+                        if (!Files.exists(p)) {
                             String id = rootDir.relativize(p).toString().replace(java.io.File.separatorChar, '/');
                             newSearch.deleteFromIndex(id);
                         }
@@ -70,7 +76,9 @@ public class MemoLinkAiAutoConfiguration {
                 }
                 newSearch.index(newGraph.getAllMdFiles());
                 holder.update(newGraph, newSearch);
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                log.warn("Incremental AI graph rebuild failed", e);
+            }
         });
     }
 

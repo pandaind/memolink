@@ -20,24 +20,31 @@ import java.util.*;
 import java.util.function.Function;
 
 /**
- * Lucene-backed search with two modes:
+ * Lucene-backed search engine with three modes:
  *
  * <h3>Keyword search (BM25)</h3>
- * Fields: title×3, headings×2, tags×2, content×1
+ * Fields: title×3, headings×2, tags×2, folder×2, content×1
  *
  * <h3>Semantic search (KNN)</h3>
- * If an {@link EmbeddingService} is provided and notes have embeddings,
- * a {@code KnnFloatVectorQuery} is run over the {@code embedding} field.
+ * Uses {@code KnnFloatVectorQuery} over the {@code embedding} field when
+ * an {@link EmbeddingService} is available and memories have embeddings.
  *
  * <h3>Hybrid search</h3>
- * {@link #hybridSearch(String, EmbeddingService, int)} combines both scores:
- * {@code final_score = α * normalised_bm25 + β * knn_score}
- * where α=0.6, β=0.4 by default. This is the main entry-point for agents.
+ * {@link #hybridSearch} combines BM25 + KNN + importance + recency:
+ * {@code score = α*norm(bm25) + β*knn + importance_boost + recency_boost}
+ * where α=0.2, β=0.8.
+ *
+ * <h3>Storage modes</h3>
+ * <ul>
+ *   <li><b>Memory mode</b> (default) — {@code ByteBuffersDirectory}, rebuilt on every start.</li>
+ *   <li><b>Disk mode</b> — {@code FSDirectory} under {@code .memolink/lucene/},
+ *       persistent and incrementally updated.</li>
+ * </ul>
  */
 public class GraphSearchService implements Closeable {
 
-    private static final float ALPHA = 0.2f;  // BM25 weight
-    private static final float BETA  = 0.8f;  // KNN weight
+    private static final float ALPHA = 0.2f; // BM25 weight in hybrid score
+    private static final float BETA  = 0.8f; // KNN weight in hybrid score
 
     private final boolean          useDisk;
     private final Directory        directory;
@@ -46,85 +53,66 @@ public class GraphSearchService implements Closeable {
 
     private DirectoryReader reader;
     private IndexSearcher   searcher;
-
     private DirectoryReader chunkReader;
     private IndexSearcher   chunkSearcher;
+
+    /** Result of a chunk-level KNN search used by {@link #searchChunks}. */
+    public record ChunkSearchResult(String fileId, int chunkIndex, float score) {}
 
     public GraphSearchService() {
         this(false, null);
     }
 
     public GraphSearchService(boolean useDisk, Path indexDir) {
-        this.useDisk = useDisk;
-        this.analyzer  = new StandardAnalyzer();
+        this.useDisk  = useDisk;
+        this.analyzer = new StandardAnalyzer();
         try {
             if (useDisk && indexDir != null) {
-                if (!Files.exists(indexDir)) Files.createDirectories(indexDir);
-                this.directory = FSDirectory.open(indexDir.resolve("main"));
+                Files.createDirectories(indexDir);
+                this.directory      = FSDirectory.open(indexDir.resolve("main"));
                 this.chunkDirectory = FSDirectory.open(indexDir.resolve("chunks"));
             } else {
-                this.directory = new ByteBuffersDirectory();
+                this.directory      = new ByteBuffersDirectory();
                 this.chunkDirectory = new ByteBuffersDirectory();
             }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to initialize Lucene directories", e);
+            throw new RuntimeException("Failed to initialise Lucene directories", e);
         }
     }
 
-    public record ChunkSearchResult(String fileId, int chunkIndex, float score) {}
-
     // ── Indexing ──────────────────────────────────────────────────────────────
 
-    public void index(Collection<MdFileMetadata> notes) throws IOException {
-        IndexWriterConfig config = new IndexWriterConfig(analyzer);
-        config.setOpenMode(useDisk ? IndexWriterConfig.OpenMode.CREATE_OR_APPEND : IndexWriterConfig.OpenMode.CREATE);
-        try (IndexWriter writer = new IndexWriter(directory, config)) {
-            for (MdFileMetadata note : notes) {
-                if (useDisk && !note.isModified()) {
-                    continue; // Skip safely because Lucene already has it on disk
-                }
-                
-                Document doc = new Document();
-                doc.add(new StringField("id",       note.getId(),    Field.Store.YES));
-                doc.add(new TextField("title",      note.getTitle(), Field.Store.YES));
-                doc.add(new TextField("content",    note.getContent(), Field.Store.NO));
-                doc.add(new TextField("tags",       String.join(" ", note.getTags()),     Field.Store.NO));
-                doc.add(new TextField("headings",   String.join(" ", note.getHeadings()), Field.Store.NO));
-                // Index folder path segments so agents can search by folder/directory name.
-                // e.g. note ID "skills/java/spring-ai.md" → folder field "skills java"
-                String noteId = note.getId();
-                int lastSlash = noteId.lastIndexOf('/');
-                if (lastSlash > 0) {
-                    String folderPath = noteId.substring(0, lastSlash)
-                            .replace('/', ' ')
-                            .replace('-', ' ');
-                    doc.add(new TextField("folder", folderPath, Field.Store.NO));
-                }
-                // Metadata ranking boost stored for retrieval
-                doc.add(new StoredField("importance",   note.getImportance()));
-                doc.add(new StoredField("accessCount",  note.getAccessCount()));
-                // KNN vector field (only when embedding is available)
-                if (note.getEmbedding() != null) {
-                    doc.add(new KnnFloatVectorField("embedding", note.getEmbedding(), VectorSimilarityFunction.COSINE));
-                }
-                writer.updateDocument(new Term("id", note.getId()), doc);
+    /**
+     * Indexes (or re-indexes) the given collection of memories.
+     * In disk mode, only memories whose {@code modified} flag is set are updated.
+     */
+    public void index(Collection<MdFileMetadata> memories) throws IOException {
+        IndexWriterConfig.OpenMode mode = useDisk
+                ? IndexWriterConfig.OpenMode.CREATE_OR_APPEND
+                : IndexWriterConfig.OpenMode.CREATE;
+
+        try (IndexWriter writer = openWriter(directory, mode)) {
+            for (MdFileMetadata memory : memories) {
+                if (useDisk && !memory.isModified()) continue;
+                writer.updateDocument(new Term("id", memory.getId()), buildDocument(memory));
             }
             writer.commit();
         }
 
-        IndexWriterConfig chunkConfig = new IndexWriterConfig(analyzer);
-        chunkConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
-        try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, chunkConfig)) {
-            for (MdFileMetadata note : notes) {
-                if (note.getChunkEmbeddings() != null && note.getChunkTexts() != null) {
-                    // Since multiple chunks share the same fileId, we use a compound term for deletion if we were to update chunks individually.
-                    // However, since we replace the entire file, we should delete all existing chunks for this file first.
-                    chunkWriter.deleteDocuments(new Term("fileId", note.getId()));
-                    for (int i = 0; i < note.getChunkEmbeddings().size(); i++) {
+        IndexWriterConfig.OpenMode chunkMode = useDisk
+                ? IndexWriterConfig.OpenMode.CREATE_OR_APPEND
+                : IndexWriterConfig.OpenMode.CREATE;
+        try (IndexWriter chunkWriter = openWriter(chunkDirectory, chunkMode)) {
+            for (MdFileMetadata memory : memories) {
+                if (useDisk && !memory.isModified()) continue;
+                if (memory.getChunkEmbeddings() != null && memory.getChunkTexts() != null) {
+                    chunkWriter.deleteDocuments(new Term("fileId", memory.getId()));
+                    for (int i = 0; i < memory.getChunkEmbeddings().size(); i++) {
                         Document cDoc = new Document();
-                        cDoc.add(new StringField("fileId", note.getId(), Field.Store.YES));
+                        cDoc.add(new StringField("fileId", memory.getId(), Field.Store.YES));
                         cDoc.add(new StoredField("chunkIndex", i));
-                        cDoc.add(new KnnFloatVectorField("embedding", note.getChunkEmbeddings().get(i), VectorSimilarityFunction.COSINE));
+                        cDoc.add(new KnnFloatVectorField("embedding",
+                                memory.getChunkEmbeddings().get(i), VectorSimilarityFunction.COSINE));
                         chunkWriter.addDocument(cDoc);
                     }
                 }
@@ -132,91 +120,55 @@ public class GraphSearchService implements Closeable {
             chunkWriter.commit();
         }
 
-        this.reader   = DirectoryReader.open(directory);
-        this.searcher = new IndexSearcher(reader);
-
-        this.chunkReader   = DirectoryReader.open(chunkDirectory);
-        this.chunkSearcher = new IndexSearcher(chunkReader);
+        reopenReaders();
     }
 
+    /**
+     * Removes a memory from both the main and chunk indexes (disk mode only).
+     */
     public void deleteFromIndex(String fileId) throws IOException {
-        IndexWriterConfig config = new IndexWriterConfig(analyzer);
-        config.setOpenMode(IndexWriterConfig.OpenMode.APPEND);
-        try (IndexWriter writer = new IndexWriter(directory, config)) {
+        try (IndexWriter writer = openWriter(directory, IndexWriterConfig.OpenMode.APPEND)) {
             writer.deleteDocuments(new Term("id", fileId));
             writer.commit();
         }
-
-        IndexWriterConfig chunkConfig = new IndexWriterConfig(analyzer);
-        chunkConfig.setOpenMode(IndexWriterConfig.OpenMode.APPEND);
-        try (IndexWriter chunkWriter = new IndexWriter(chunkDirectory, chunkConfig)) {
+        try (IndexWriter chunkWriter = openWriter(chunkDirectory, IndexWriterConfig.OpenMode.APPEND)) {
             chunkWriter.deleteDocuments(new Term("fileId", fileId));
             chunkWriter.commit();
         }
-
-        // Reopen readers
-        DirectoryReader newReader = DirectoryReader.openIfChanged(this.reader);
-        if (newReader != null) {
-            this.reader.close();
-            this.reader = newReader;
-            this.searcher = new IndexSearcher(this.reader);
-        }
-
-        DirectoryReader newChunkReader = DirectoryReader.openIfChanged(this.chunkReader);
-        if (newChunkReader != null) {
-            this.chunkReader.close();
-            this.chunkReader = newChunkReader;
-            this.chunkSearcher = new IndexSearcher(this.chunkReader);
-        }
+        reopenReaders();
     }
 
     // ── Keyword search (BM25) ─────────────────────────────────────────────────
 
-    /** Returns IDs only (backwards-compatible). */
+    /** Returns matching memory IDs only (score-less, backwards-compatible). */
     public List<String> search(String query, int maxResults) throws IOException {
-        return searchWithScores(query, maxResults).stream()
-                .map(SearchResult::id)
-                .toList();
+        return searchWithScores(query, maxResults).stream().map(SearchResult::id).toList();
     }
 
     public List<SearchResult> searchWithScores(String query, int maxResults) throws IOException {
-        if (reader == null || query == null || query.isBlank()) return Collections.emptyList();
+        if (!isReady() || isBlank(query)) return Collections.emptyList();
         Map<String, Float> boosts = Map.of(
-            "title",    3.0f,
-            "headings", 2.0f,
-            "tags",     2.0f,
-            "folder",   2.0f,
-            "content",  1.0f
-        );
+                "title",    3.0f,
+                "headings", 2.0f,
+                "tags",     2.0f,
+                "folder",   2.0f,
+                "content",  1.0f);
         String[] fields = {"title", "headings", "tags", "folder", "content"};
-        Query parsedQuery = buildKeywordQuery(query, fields, boosts);
-        TopDocs topDocs = searcher.search(parsedQuery, maxResults);
-        List<SearchResult> results = new ArrayList<>(topDocs.scoreDocs.length);
-        for (ScoreDoc sd : topDocs.scoreDocs) {
-            Document doc = searcher.storedFields().document(sd.doc);
-            results.add(new SearchResult(doc.get("id"), doc.get("title"), sd.score));
-        }
-        return results;
+        TopDocs topDocs = searcher.search(buildKeywordQuery(query, fields, boosts), maxResults);
+        return scoreDocs(topDocs, searcher, doc -> new SearchResult(doc.get("id"), doc.get("title"), 0));
     }
 
     // ── Semantic search (KNN) ─────────────────────────────────────────────────
 
-    /**
-     * Pure KNN vector search using a query embedding.
-     * Returns empty list if embeddings were not indexed.
-     */
+    /** Pure KNN vector search. Returns empty list if embeddings are not yet indexed. */
     public List<SearchResult> semanticSearch(float[] queryEmbedding, int maxResults) throws IOException {
-        if (reader == null || queryEmbedding == null) return Collections.emptyList();
+        if (!isReady() || queryEmbedding == null) return Collections.emptyList();
         Query knnQuery = new KnnFloatVectorQuery("embedding", queryEmbedding, maxResults);
         TopDocs topDocs = searcher.search(knnQuery, maxResults);
-        List<SearchResult> results = new ArrayList<>(topDocs.scoreDocs.length);
-        for (ScoreDoc sd : topDocs.scoreDocs) {
-            Document doc = searcher.storedFields().document(sd.doc);
-            results.add(new SearchResult(doc.get("id"), doc.get("title"), sd.score));
-        }
-        return results;
+        return scoreDocs(topDocs, searcher, doc -> new SearchResult(doc.get("id"), doc.get("title"), 0));
     }
 
+    /** Chunk-level KNN search used by {@code ask_vault}. */
     public List<ChunkSearchResult> searchChunks(float[] queryEmbedding, int maxResults) throws IOException {
         if (chunkReader == null || queryEmbedding == null) return Collections.emptyList();
         Query knnQuery = new KnnFloatVectorQuery("embedding", queryEmbedding, maxResults);
@@ -224,7 +176,10 @@ public class GraphSearchService implements Closeable {
         List<ChunkSearchResult> results = new ArrayList<>(topDocs.scoreDocs.length);
         for (ScoreDoc sd : topDocs.scoreDocs) {
             Document doc = chunkSearcher.storedFields().document(sd.doc);
-            results.add(new ChunkSearchResult(doc.get("fileId"), doc.getField("chunkIndex").numericValue().intValue(), sd.score));
+            results.add(new ChunkSearchResult(
+                    doc.get("fileId"),
+                    doc.getField("chunkIndex").numericValue().intValue(),
+                    sd.score));
         }
         return results;
     }
@@ -232,15 +187,12 @@ public class GraphSearchService implements Closeable {
     // ── Hybrid search (BM25 + KNN + metadata ranking) ────────────────────────
 
     /**
-     * Combines BM25, KNN semantic score, importance and recency into one score:
-     * <pre>
-     * final = α*norm(bm25) + β*knn + γ*importance_norm + δ*recency_norm
-     * </pre>
-     * Pass a {@code metadataLookup} (e.g. {@code graph::getMdFile}) to enable
-     * importance+recency boosting; pass {@code null} to skip it.
+     * Combines BM25, KNN, importance, and recency into a single ranking:
+     * <pre>score = α*norm(bm25) + β*norm(knn) + importance_boost + recency_boost</pre>
+     * Pass a {@code metadataLookup} to enable importance/recency boosting, or
+     * {@code null} to skip it.
      */
-    public List<SearchResult> hybridSearch(String query,
-                                           EmbeddingService embeddingService,
+    public List<SearchResult> hybridSearch(String query, EmbeddingService embeddingService,
                                            int maxResults) throws IOException {
         return hybridSearch(query, embeddingService, maxResults, null);
     }
@@ -250,20 +202,16 @@ public class GraphSearchService implements Closeable {
                                            int maxResults,
                                            Function<String, MdFileMetadata> metadataLookup)
             throws IOException {
-        if (reader == null || query == null || query.isBlank()) return Collections.emptyList();
+        if (!isReady() || isBlank(query)) return Collections.emptyList();
 
-        // BM25 pass
-        List<SearchResult> keyword = searchWithScores(query, maxResults * 2);
-
-        // Semantic pass
+        List<SearchResult> keyword  = searchWithScores(query, maxResults * 2);
         List<SearchResult> semantic = Collections.emptyList();
         if (embeddingService != null && embeddingService.isAvailable()) {
             float[] qEmb = embeddingService.embed(query);
             if (qEmb != null) semantic = semanticSearch(qEmb, maxResults * 2);
         }
 
-        // Merge BM25 + KNN scores
-        Map<String, Float> scores = new LinkedHashMap<>();
+        Map<String, Float>  scores = new LinkedHashMap<>();
         Map<String, String> titles = new HashMap<>();
 
         float maxBm25 = keyword.stream().map(SearchResult::score).max(Float::compare).orElse(1f);
@@ -279,24 +227,8 @@ public class GraphSearchService implements Closeable {
             }
         }
 
-        // Metadata ranking boost (Capability 5)
         if (metadataLookup != null) {
-            long now = System.currentTimeMillis();
-            long oneWeekMs = 7L * 24 * 3600 * 1000;
-            for (String id : scores.keySet()) {
-                MdFileMetadata m = metadataLookup.apply(id);
-                if (m == null) continue;
-                // Importance: 0-10 → 0-0.10 boost
-                float importanceBoost = m.getImportance() * 0.01f;
-                // Recency: decays from 0.05 to 0 over one week since last access
-                float recencyBoost = 0f;
-                long lastAccess = m.getLastAccessedMs();
-                if (lastAccess > 0) {
-                    long ageMs = now - lastAccess;
-                    recencyBoost = Math.max(0f, 0.05f * (1f - (float) ageMs / oneWeekMs));
-                }
-                scores.merge(id, importanceBoost + recencyBoost, Float::sum);
-            }
+            applyMetadataBoost(scores, metadataLookup);
         }
 
         return scores.entrySet().stream()
@@ -306,7 +238,112 @@ public class GraphSearchService implements Closeable {
                 .toList();
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    @Override
+    public void close() throws IOException {
+        if (reader != null)      reader.close();
+        if (chunkReader != null) chunkReader.close();
+        analyzer.close();
+        directory.close();
+        chunkDirectory.close();
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private Document buildDocument(MdFileMetadata memory) {
+        Document doc = new Document();
+        doc.add(new StringField("id",       memory.getId(),    Field.Store.YES));
+        doc.add(new TextField("title",      memory.getTitle(), Field.Store.YES));
+        doc.add(new TextField("content",    memory.getContent(), Field.Store.NO));
+        doc.add(new TextField("tags",       String.join(" ", memory.getTags()),     Field.Store.NO));
+        doc.add(new TextField("headings",   String.join(" ", memory.getHeadings()), Field.Store.NO));
+
+        // Index folder path segments so agents can search by directory name
+        // e.g. "skills/java/spring-ai.md" → folder field "skills java"
+        String id       = memory.getId();
+        int    lastSlash = id.lastIndexOf('/');
+        if (lastSlash > 0) {
+            String folder = id.substring(0, lastSlash).replace('/', ' ').replace('-', ' ');
+            doc.add(new TextField("folder", folder, Field.Store.NO));
+        }
+
+        doc.add(new StoredField("importance",  memory.getImportance()));
+        doc.add(new StoredField("accessCount", memory.getAccessCount()));
+
+        if (memory.getEmbedding() != null) {
+            doc.add(new KnnFloatVectorField("embedding", memory.getEmbedding(),
+                    VectorSimilarityFunction.COSINE));
+        }
+        return doc;
+    }
+
+    private void applyMetadataBoost(Map<String, Float> scores,
+                                    Function<String, MdFileMetadata> metadataLookup) {
+        long now       = System.currentTimeMillis();
+        long oneWeekMs = 7L * 24 * 3600 * 1000;
+        for (String id : scores.keySet()) {
+            MdFileMetadata m = metadataLookup.apply(id);
+            if (m == null) continue;
+            float importanceBoost = m.getImportance() * 0.01f; // 0–10 → 0–0.10
+            float recencyBoost    = 0f;
+            long  lastAccess      = m.getLastAccessedMs();
+            if (lastAccess > 0) {
+                long ageMs = now - lastAccess;
+                recencyBoost = Math.max(0f, 0.05f * (1f - (float) ageMs / oneWeekMs));
+            }
+            scores.merge(id, importanceBoost + recencyBoost, Float::sum);
+        }
+    }
+
+    private <T> List<T> scoreDocs(TopDocs topDocs, IndexSearcher s,
+                                   java.util.function.Function<Document, T> mapper) throws IOException {
+        List<T> results = new ArrayList<>(topDocs.scoreDocs.length);
+        for (ScoreDoc sd : topDocs.scoreDocs) {
+            Document doc = s.storedFields().document(sd.doc);
+            // Re-apply the real score to SearchResult using the raw score from ScoreDoc
+            T item = mapper.apply(doc);
+            if (item instanceof SearchResult sr) {
+                results.add((T) new SearchResult(sr.id(), sr.title(), sd.score));
+            } else {
+                results.add(item);
+            }
+        }
+        return results;
+    }
+
+    private void reopenReaders() throws IOException {
+        if (reader == null) {
+            this.reader   = DirectoryReader.open(directory);
+            this.searcher = new IndexSearcher(reader);
+        } else {
+            DirectoryReader newReader = DirectoryReader.openIfChanged(reader);
+            if (newReader != null) {
+                reader.close();
+                reader   = newReader;
+                searcher = new IndexSearcher(reader);
+            }
+        }
+
+        if (chunkReader == null) {
+            this.chunkReader   = DirectoryReader.open(chunkDirectory);
+            this.chunkSearcher = new IndexSearcher(chunkReader);
+        } else {
+            DirectoryReader newChunkReader = DirectoryReader.openIfChanged(chunkReader);
+            if (newChunkReader != null) {
+                chunkReader.close();
+                chunkReader   = newChunkReader;
+                chunkSearcher = new IndexSearcher(chunkReader);
+            }
+        }
+    }
+
+    private static IndexWriter openWriter(Directory dir, IndexWriterConfig.OpenMode mode)
+            throws IOException {
+        IndexWriterConfig config = new IndexWriterConfig(new StandardAnalyzer());
+        config.setOpenMode(mode);
+        return new IndexWriter(dir, config);
+    }
 
     private Query buildKeywordQuery(String query, String[] fields, Map<String, Float> boosts) {
         MultiFieldQueryParser qp = new MultiFieldQueryParser(fields, analyzer, boosts);
@@ -321,12 +358,6 @@ public class GraphSearchService implements Closeable {
         }
     }
 
-    @Override
-    public void close() throws IOException {
-        if (reader != null) { reader.close(); }
-        if (chunkReader != null) { chunkReader.close(); }
-        analyzer.close();
-        directory.close();
-        chunkDirectory.close();
-    }
+    private boolean isReady()          { return reader != null; }
+    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 }
