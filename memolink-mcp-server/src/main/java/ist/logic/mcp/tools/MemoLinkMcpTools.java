@@ -77,23 +77,23 @@ public class MemoLinkMcpTools {
         this.stopWordFilterService = stopWordFilterService;
     }
 
-    @Tool(description = "Search md files via semantic search. Returns matching file IDs, titles, and excerpts.")
-    public String search_md_files(String query) {
+    @Tool(description = "Search memories by keyword and semantic similarity. Returns matching note IDs, titles, and scores.")
+    public String search_memories(String query) {
         try {
             return formatSearchResults(holder.getSearchService().hybridSearch(
                     query, embeddingService, 10, holder.getGraph()::getMdFile));
         } catch (IOException e) {
-            return toJson(Map.of("error", "Error searching files: " + e.getMessage()));
+            return toJson(Map.of("error", "Error searching notes: " + e.getMessage()));
         }
     }
 
-    @Tool(description = "Get related md file IDs via graph traversal up to depth 2.")
-    public String get_related_md_files(String file_id) {
+    @Tool(description = "Get memories related to a given memory via graph traversal up to depth 2. Returns connected note IDs.")
+    public String get_related_memories(String file_id) {
         return formatStringList(traversalService.traverse(holder.getGraph(), file_id, 2, 5, 3));
     }
 
-    @Tool(description = "Get full markdown content, tags, and links for a file by its ID.")
-    public String get_md_file(String file_id) {
+    @Tool(description = "Read the full content of a memory by its ID. Returns title, body, tags, headings, and wiki-links.")
+    public String read_memory(String file_id) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
         if (mdFile == null) return toJson(Map.of("error", "File not found."));
         mdFile.recordAccess();   // Capability 5: metadata ranking
@@ -113,13 +113,13 @@ public class MemoLinkMcpTools {
         return formatNoteDetail(detail);
     }
 
-    @Tool(description = "Traverse the graph from a file up to given depth (max 3). Returns connected file IDs.")
-    public String traverse_graph(String file_id, int depth) {
+    @Tool(description = "Traverse the knowledge graph from a memory up to a given depth (max 3). Returns connected note IDs.")
+    public String traverse_memories(String file_id, int depth) {
         return formatStringList(traversalService.traverse(holder.getGraph(), file_id, Math.min(depth, 3), 5, 2));
     }
 
-    @Tool(description = "List all file IDs in the vault.")
-    public String list_md_files() {
+    @Tool(description = "List all memory IDs in the vault.")
+    public String list_memories() {
         return formatStringList(holder.getGraph().getAllMdFiles().stream()
                 .map(MdFileMetadata::getId)
                 .sorted()
@@ -127,8 +127,8 @@ public class MemoLinkMcpTools {
     }
 
 
-    @Tool(description = "Get a specific heading section from an md file.")
-    public String get_md_file_section(String file_id, String heading) {
+    @Tool(description = "Read a specific heading section from a memory. Returns the compressed text of that section.")
+    public String read_memory_section(String file_id, String heading) {
         MdFileMetadata mdFile = holder.getGraph().getMdFile(file_id);
         if (mdFile == null) return toJson(Map.of("error", "File not found."));
         mdFile.recordAccess();
@@ -178,7 +178,7 @@ public class MemoLinkMcpTools {
         ));
     }
 
-    @Tool(description = "Pure semantic vector search. Returns matching file IDs and excerpts.")
+    @Tool(description = "Pure semantic vector search over memories. Returns matching note IDs and scores.")
     public String semantic_search(String query) {
         if (!embeddingService.isAvailable()) return toJson(Map.of("error", "Semantic search is disabled (model not available)."));
         float[] qEmb = embeddingService.embed(query);
@@ -190,8 +190,8 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = "Get a note's full content plus its 1-hop graph neighbors (GraphRAG context).")
-    public String get_graph_context(String file_id) {
+    @Tool(description = "Read a memory with full GraphRAG context: its body plus summaries of its 1-hop neighbours.")
+    public String get_memory_context(String file_id) {
         MdFileMetadata m = holder.getGraph().getMdFile(file_id);
         if (m != null) m.recordAccess();
         GraphContextResult ctx = traversalService.buildContext(holder.getGraph(), file_id);
@@ -207,16 +207,16 @@ public class MemoLinkMcpTools {
         return formatGraphContext(ctx);
     }
 
-    @Tool(description = "Find shortest path of connected notes between from_id and to_id.")
-    public String find_path_between_notes(String from_id, String to_id) {
+    @Tool(description = "Find the shortest path of connected notes between two note IDs.")
+    public String find_path(String from_id, String to_id) {
         List<String> path = traversalService.findPath(holder.getGraph(), from_id, to_id);
         if (path.isEmpty()) return toJson(Map.of("error", "No path found between " + from_id + " and " + to_id + "."));
         return formatStringList(path);
     }
 
-    @Tool(description = "Create a new md file. Args: file_id, title, body, wiki_links, tags, metadata.")
+    @Tool(description = "Create a new memory. Args: file_id (path like 'folder/name.md'), title, body, wiki_links, tags, metadata.")
     @PreAuthorize("hasRole('WRITE')")
-    public String create_md_file(String file_id,
+    public String create_memory(String file_id,
                                  String title,
                                  String body,
                                  List<String> wiki_links,
@@ -225,7 +225,7 @@ public class MemoLinkMcpTools {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
         if (Files.exists(target)) {
-            return toJson(Map.of("error", "File already exists: " + normalizedId + ". Use update_md_file to modify it."));
+            return toJson(Map.of("error", "File already exists: " + normalizedId + ". Use update_memory to modify it."));
         }
         try {
             List<String> allLinks = autoDiscoverLinks(title, body, normalizedId, wiki_links);
@@ -241,13 +241,13 @@ public class MemoLinkMcpTools {
                 "autoLinked", autoLinked
             ));
         } catch (IOException e) {
-            return toJson(Map.of("error", "Failed to create file: " + e.getMessage()));
+            return toJson(Map.of("error", "Failed to create memory: " + e.getMessage()));
         }
     }
 
-    @Tool(description = "Update an existing md file. Args: file_id, title, body, wiki_links, tags, metadata.")
+    @Tool(description = "Update an existing memory. Args: file_id, title, body, wiki_links, tags, metadata.")
     @PreAuthorize("hasRole('WRITE')")
-    public String update_md_file(String file_id,
+    public String update_memory(String file_id,
                                  String title,
                                  String body,
                                  List<String> wiki_links,
@@ -269,13 +269,13 @@ public class MemoLinkMcpTools {
                 "autoLinked", autoLinked
             ));
         } catch (IOException e) {
-            return toJson(Map.of("error", "Failed to update file: " + e.getMessage()));
+            return toJson(Map.of("error", "Failed to update memory: " + e.getMessage()));
         }
     }
 
-    @Tool(description = "Delete an md file by file_id.")
+    @Tool(description = "Permanently delete a memory from the vault by its ID.")
     @PreAuthorize("hasRole('WRITE')")
-    public String delete_md_file(String file_id) {
+    public String delete_memory(String file_id) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         Path target = vaultDir.resolve(normalizedId);
         if (!Files.exists(target)) {
@@ -289,9 +289,9 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = "Set note importance (0-10) to boost its search ranking.")
+    @Tool(description = "Set memory importance (0-10) to boost its search ranking.")
     @PreAuthorize("hasRole('WRITE')")
-    public String set_note_importance(String file_id, int importance) {
+    public String set_memory_importance(String file_id, int importance) {
         String normalizedId = MdFileParserService.normalizeMdFileId(file_id);
         MdFileMetadata m = holder.getGraph().getMdFile(normalizedId);
         if (m == null) return toJson(Map.of("error", "File not found: " + normalizedId));
@@ -309,8 +309,8 @@ public class MemoLinkMcpTools {
         }
     }
 
-    @Tool(description = "Returns summary of the vault: total notes, top tags, and highly connected notes. Returns JSON.")
-    public String get_memory_summary() {
+    @Tool(description = "Get a summary of the entire vault: total notes, top tags, most connected notes, and important notes.")
+    public String vault_summary() {
         var graph = holder.getGraph();
         var allNotes = graph.getAllMdFiles();
 
@@ -344,8 +344,8 @@ public class MemoLinkMcpTools {
         return toJson(summary);
     }
 
-    @Tool(description = "Gather excerpts from notes related to a topic to help write a reflection summary. Returns structured JSON.")
-    public String gather_reflection_sources(String topic, int max_sources) {
+    @Tool(description = "Gather compressed excerpts from notes related to a topic to help write a reflection or summary note.")
+    public String gather_sources(String topic, int max_sources) {
         int limit = max_sources > 0 ? Math.min(max_sources, 10) : 5;
         List<SearchResult> hits;
         try {
@@ -381,8 +381,8 @@ public class MemoLinkMcpTools {
         ));
     }
 
-    @Tool(description = "Search the entire vault and return the exact relevant paragraphs to answer the query. Returns structured JSON data, grouped by file to avoid duplicate graph connections.")
-    public String query_vault(String query) {
+    @Tool(description = "Ask a question and get back precise, compressed paragraphs from the vault that directly answer it. Best first tool to use for any factual query.")
+    public String ask_vault(String query) {
         if (query == null || query.isBlank()) return "{\"error\": \"Query is empty.\"}";
 
         float[] queryVector = embeddingService.embed(query);

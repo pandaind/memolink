@@ -157,12 +157,17 @@ The LLM can now autonomously call `searchMdFiles`, `getRelatedMdFiles`, `getMdFi
 
 The `memolink-mcp-server` exposes the following key tools to LLM clients:
 
-- `query_vault(query)`: Semantic chunk search. Returns highly targeted, compressed paragraphs (with semantic similarity scores) that directly answer the query without reading whole files.
-- `search_md_files(query)`: Hybrid keyword + semantic search for entire files.
-- `get_graph_context(file_id)`: Fetches a note along with its 1-hop GraphRAG context (summaries of immediate neighbors).
-- `find_path_between_notes(from_id, to_id)`: Finds the shortest path across your knowledge graph.
-- `get_md_file(file_id)`: Retrieves the full content of a file.
-- CRUD Operations: `create_md_file`, `update_md_file`, `delete_md_file` (Requires write permission).
+- `ask_vault(query)`: Semantic chunk search. Returns precise, compressed paragraphs (with scores) that directly answer the query. **Best first tool for any factual query.**
+- `search_notes(query)`: Hybrid keyword + semantic search across full notes.
+- `read_note(file_id)`: Retrieves the full content of a note.
+- `read_note_section(file_id, heading)`: Reads a specific section of a note by heading.
+- `get_note_context(file_id)`: Fetches a note along with its 1-hop GraphRAG context.
+- `get_related_notes(file_id)`: BFS neighbours up to depth 2.
+- `traverse_notes(file_id, depth)`: Multi-hop BFS traversal up to depth 3.
+- `find_path(from_id, to_id)`: Finds the shortest path across your knowledge graph.
+- `vault_summary()`: Vault stats — total notes, top tags, most connected and important notes.
+- `gather_sources(topic, max_sources)`: Collect excerpts for a reflection or summary note.
+- CRUD: `create_memory`, `update_memory`, `delete_memory` (requires WRITE role).
 
 ---
 

@@ -292,21 +292,22 @@ File: `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`)
 
 | Tool | Role needed | Description |
 |---|---|---|
-| `query_vault` | READ | Semantic chunk search. Returns highly targeted paragraphs answering a query |
-| `list_md_files` | READ | List all note IDs |
-| `get_md_file` | READ | Read a note's content, tags, wiki-links |
-| `search_md_files` | READ | Semantic vector search (falls back to BM25) |
-| `semantic_search` | READ | Pure vector search (embeddings) |
-| `get_related_md_files` | READ | BFS graph neighbours |
-| `get_graph_context` | READ | Note + 1-hop neighbours with relationship types |
-| `traverse_graph` | READ | Multi-hop BFS traversal |
-| `find_path_between_notes` | READ | Shortest path between two notes |
-| `get_memory_summary` | READ | Graph stats, top tags, hub notes, importance list |
-| `gather_reflection_sources` | READ | Collect source notes for a reflection/summary |
-| `create_md_file` | WRITE | Create a new note |
-| `update_md_file` | WRITE | Update an existing note |
-| `delete_md_file` | WRITE | Delete a note |
-| `set_note_importance` | WRITE | Set note importance (0–10), persisted to frontmatter |
+| `ask_vault` | READ | Ask a question; returns precise compressed paragraphs that directly answer it. Best first tool. |
+| `search_memories` | READ | Hybrid keyword + semantic search. Returns matching note IDs, titles, and scores. |
+| `semantic_search` | READ | Pure vector search only (no BM25). |
+| `list_memories` | READ | List all note IDs in the vault. |
+| `read_memory` | READ | Read a note's full content, tags, headings, and wiki-links. |
+| `read_memory_section` | READ | Read a specific heading section from a note. |
+| `get_related_memories` | READ | BFS graph neighbours up to depth 2. |
+| `get_memory_context` | READ | Note body + 1-hop GraphRAG neighbour summaries. |
+| `traverse_memories` | READ | Multi-hop BFS traversal up to depth 3. |
+| `find_path` | READ | Shortest path between two notes. |
+| `vault_summary` | READ | Vault stats: total notes, top tags, hub notes, importance list. |
+| `gather_sources` | READ | Collect excerpts related to a topic for writing a reflection note. |
+| `create_memory` | WRITE | Create a new note. |
+| `update_memory` | WRITE | Update an existing note. |
+| `delete_memory` | WRITE | Permanently delete a note. |
+| `set_memory_importance` | WRITE | Set note importance (0–10), persisted to frontmatter. |
 
 ---
 
@@ -314,15 +315,15 @@ File: `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`)
 
 | Prompt | Arguments | What it does |
 |---|---|---|
-| `list_notes` | — | Browse all notes grouped by topic |
-| `search_notes` | `query` | Keyword search + related notes |
+| `list_memories` | — | Browse all notes grouped by topic |
+| `search_memories` | `query` | Keyword search + related notes |
 | `semantic_search` | `query` | Vector search + graph context |
 | `find_path` | `from_id`, `to_id` | Narrate connection between two notes |
-| `create_note` | `title`, `body`, `tags`, `links` | Full create workflow |
-| `update_note` | `file_id`, `instructions` | Read-then-update workflow |
-| `delete_note` | `file_id` | Safe delete with dependency check |
-| `generate_reflection` | `topic`, `max_sources` | Synthesise a summary note |
-| `memory_overview` | — | Full graph stats report |
+| `create_memory` | `title`, `body`, `tags`, `links` | Full create workflow |
+| `update_memory` | `file_id`, `instructions` | Read-then-update workflow |
+| `delete_memory` | `file_id` | Safe delete with dependency check |
+| `gather_sources` | `topic`, `max_sources` | Synthesise a summary note |
+| `vault_summary` | — | Full graph stats report |
 
 ---
 
