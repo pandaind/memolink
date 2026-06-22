@@ -4,7 +4,7 @@ MemoLink Vault Writer Agent
 ============================
 Intelligently uploads skills, instructions, context and memory notes
 to MemoLink with rich metadata optimized for semantic and keyword search.
-Notes are namespaced under their project folder: {project}/{type}/{title}.md
+Memories are namespaced under their project folder: {project}/{type}/{title}.md
 
 USAGE
 -----
@@ -17,7 +17,7 @@ USAGE
   # Write inline content:
   python3 agents/vault_writer.py --title "Docker Fix" --body "..." --type memory
 
-  # Force-update even if a similar note already exists:
+  # Force-update even if a similar memory already exists:
   python3 agents/vault_writer.py --file note.md --type instruction --force-update
 
   # Extra tags on top of auto-extracted ones:
@@ -289,10 +289,10 @@ def detect_project_name(cwd: str | None = None) -> str:
 
 def find_existing(client: McpClient, title: str, threshold: float) -> tuple[str | None, float]:
     """
-    Search MemoLink for an existing note similar to title.
+    Search MemoLink for an existing memory similar to title.
     Returns (file_id, score) of the best hit above threshold, or (None, 0.0).
     """
-    results = client.call("search_md_files", {"query": title})
+    results = client.call("search_memories", {"query": title})
     if not isinstance(results, list):
         return None, 0.0
     for hit in results:
@@ -350,8 +350,8 @@ def upload_note(
         sys.exit(1)
 
     if existing_id and force_update:
-        print(f"\n🔄  Updating existing note: {existing_id}")
-        result = client.call("update_md_file", {
+        print(f"\n🔄  Updating existing memory: {existing_id}")
+        result = client.call("update_memory", {
             "file_id":    existing_id,
             "title":      title,
             "body":       enriched_body,
@@ -359,12 +359,11 @@ def upload_note(
             "tags":       tags,
             "metadata":   metadata,
         })
-        # Server returns e.g. "Updated: skills/foo.md"
         raw = result if isinstance(result, str) else existing_id
         final_id = raw.removeprefix("Updated: ").split(" ")[0] if raw.startswith("Updated:") else existing_id
     else:
-        print(f"\n✨  Creating new note: {file_id}")
-        result = client.call("create_md_file", {
+        print(f"\n✨  Creating new memory: {file_id}")
+        result = client.call("create_memory", {
             "file_id":    file_id,
             "title":      title,
             "body":       enriched_body,
@@ -372,14 +371,13 @@ def upload_note(
             "tags":       tags,
             "metadata":   metadata,
         })
-        # Server returns e.g. "Created: skills/foo.md" or "Created: skills/foo.md (auto-linked: ...)"
         raw = result if isinstance(result, str) else file_id
         final_id = raw.removeprefix("Created: ").split(" ")[0] if raw.startswith("Created:") else file_id
 
     print(f"   Server: {result}")
 
     # ── Set importance ────────────────────────────────────────────────────────
-    imp_result = client.call("set_note_importance", {
+    imp_result = client.call("set_memory_importance", {
         "file_id":    final_id,
         "importance": importance,
     })
@@ -387,7 +385,7 @@ def upload_note(
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print(f"\n{'─'*60}")
-    print(f"  ✅  Note ready in MemoLink")
+    print(f"  ✅  Memory ready in MemoLink")
     print(f"  File ID   : {final_id}")
     print(f"  Project   : {project}")
     print(f"  Type      : {note_type}")
