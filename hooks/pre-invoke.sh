@@ -17,7 +17,7 @@ MEMOLINK_URL="${MEMOLINK_URL:-http://localhost:8765}"
 CURRENT_DIR=$(pwd)
 
 # ==============================================================================
-# ISSUE 5: Health check — abort if MemoLink is unreachable
+# Health check — abort if MemoLink is unreachable
 # ==============================================================================
 if ! curl -sf "${MEMOLINK_URL}/actuator/health" -o /dev/null 2>/dev/null; then
     echo "⚠️  MemoLink server is offline or unreachable at ${MEMOLINK_URL}."
@@ -27,7 +27,7 @@ if ! curl -sf "${MEMOLINK_URL}/actuator/health" -o /dev/null 2>/dev/null; then
 fi
 
 # ==============================================================================
-# ISSUE 4: Detect reflection / summarization prompts → emit Flow D directive
+# Detect reflection / summarization prompts → emit Flow D directive
 # ==============================================================================
 PROMPT_LOWER=$(echo "$USER_PROMPT" | tr '[:upper:]' '[:lower:]')
 
@@ -58,14 +58,14 @@ The user's request has been identified as a REFLECTION / SYNTHESIS task.
 Follow FLOW D exactly:
 
 CRITICAL WORKFLOW INSTRUCTIONS:
-1. [ORIENTATION]  Call 'get_memory_summary()' first. Review the top hub notes and
+1. [ORIENTATION]  Call 'vault_summary()' first. Review the top hub memories and
    dominant tags to identify the best search terms for the topic.
-2. [GATHER]       Call 'gather_reflection_sources(topic, 5)' with the core topic
+2. [GATHER]       Call 'gather_sources(topic, 5)' with the core topic
    extracted from the user prompt: "$USER_PROMPT".
-   This returns compressed excerpts from the top 5 related notes in a single call.
+   This returns compressed excerpts from the top 5 related memories in a single call.
 3. [EVALUATE]     Discard any source whose relevance score is below $SCORE_THRESHOLD.
 4. [SYNTHESIZE]   Read the excerpts and generate a comprehensive summary or report.
-5. [SAVE]         Use 'create_md_file(...)' to save the synthesis.
+5. [SAVE]         Use 'create_memory(...)' to save the synthesis.
    - Tag it with 'reflection'.
    - Add the source file_ids to the 'wiki_links' array so the Knowledge Graph
      links the reflection back to its sources.
@@ -84,29 +84,27 @@ You are operating in the repository directory: $CURRENT_DIR
 Score threshold for relevance: $SCORE_THRESHOLD
 
 CRITICAL WORKFLOW INSTRUCTIONS:
-1. [ORIENTATION]        If the user prompt is broad or ambiguous, call
-   'get_memory_summary()' FIRST. It is a zero-cost call (no embeddings, instant)
-   that returns graph statistics, hub notes, and top tags — helping you choose
-   a better search query before spending a tool call on 'search_md_files'.
+1. [ASK THE VAULT]  Call 'ask_vault(query)' FIRST with the user's core question.
+   This is the fastest path — it returns precise, compressed paragraphs ranked by
+   semantic similarity score. Use the score field to judge relevance.
 
-2. [DYNAMIC SKILLS DISCOVERY]  Use the 'search_md_files' MCP tool to dynamically
-   discover relevant skills, instructions, or past architectural decisions related
-   to: "$USER_PROMPT". Treat the returned markdown files as executable skills.
+2. [ORIENTATION]    If ask_vault results are thin or ambiguous, call 'vault_summary()'
+   to get graph statistics, hub memories, and top tags — helping you choose better
+   search terms before spending another tool call.
 
-3. [EVALUATION]  Review the 'score' of the returned search results.
-   Ignore results with a score below $SCORE_THRESHOLD.
+3. [BROAD SEARCH]   If still needed, call 'search_memories(query)' to find full
+   memories relevant to: "$USER_PROMPT". Ignore results with score below $SCORE_THRESHOLD.
 
-4. [DEEP DIVE]   Use 'get_graph_context' on the most relevant file ID.
-   This provides both the skill content AND its immediate neighbours in the
-   knowledge graph, giving you maximum context with minimal tool calls.
+4. [DEEP DIVE]      Call 'get_memory_context(file_id)' on the most relevant memory.
+   This returns the full body AND its 1-hop graph neighbours — maximum context
+   with a single tool call.
 
-5. [EXECUTION]   Only after reading the dynamically loaded skills should you
+5. [EXECUTION]      Only after reading the dynamically loaded memories should you
    fulfil the user's request.
 
-6. [SKILL UPDATE]  When the task is complete, use 'create_md_file' or
-   'update_md_file' to document what you learned. If you invented a new workflow
-   or pattern, save it as a new skill. If you improved an existing skill, update
-   it with the new information.
+6. [SKILL UPDATE]   When the task is complete, use 'create_memory' or 'update_memory'
+   to document what you learned. If you invented a new workflow or pattern, save it
+   as a new skill memory. If you improved an existing memory, update it.
 
 Do not skip these steps. The vault contains critical project-specific rules
 that supersede your base training.

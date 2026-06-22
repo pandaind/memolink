@@ -28,29 +28,29 @@ cat <<EOF
 --- MEMOLINK POST-TASK DIRECTIVE ---
 
 The task has completed successfully. Before you close, you MUST perform a
-final Skill Consolidation pass. This is non-optional.
+final Memory Consolidation pass. This is non-optional.
 
 CONSOLIDATION WORKFLOW:
-1. [ORIENTATION]   Call 'get_memory_summary()' to get a live view of the vault.
-   Check if any hub notes are now outdated based on what you just did.
+1. [ORIENTATION]   Call 'vault_summary()' to get a live view of the vault.
+   Check if any hub memories are now outdated based on what you just did.
 
 2. [DECIDE]        For EACH meaningful thing you learned, invented, or fixed
    during this task, choose one of:
-   a) NEW SKILL    → Call 'create_md_file(file_id, title, body, wiki_links, tags)'
-                     to save it as a new reusable skill.
-   b) UPDATE SKILL → Call 'get_md_file(file_id)' first, then call 'update_md_file(...)'
-                     to append your new knowledge to an existing note.
+   a) NEW MEMORY   → Call 'create_memory(file_id, title, body, wiki_links, tags)'
+                     to save it as a new reusable skill or memory.
+   b) UPDATE       → Call 'read_memory(file_id)' first, then call 'update_memory(...)'
+                     to append your new knowledge to an existing memory.
 
-3. [IMPORTANCE]    If the note you created or updated is foundational to the
+3. [IMPORTANCE]    If the memory you created or updated is foundational to the
    project (an architectural decision, a hard-won bug fix, a core pattern),
-   call 'set_note_importance(file_id, score)' with a score of 7–10 so that
+   call 'set_memory_importance(file_id, score)' with a score of 7–10 so that
    future agents always surface it first.
 
-4. [LINK]          Ensure all new notes include 'wiki_links' pointing to
-   related existing notes. This keeps the Knowledge Graph dense and accurate.
+4. [LINK]          Ensure all new memories include 'wiki_links' pointing to
+   related existing memories. This keeps the Knowledge Graph dense and accurate.
 
 Do not skip this step. A vault that is never written to becomes stale.
-The skills you save now will be found by the next agent handling a similar task.
+The memories you save now will be found by the next agent handling a similar task.
 
 Task Summary provided by framework: "$AGENT_SUMMARY"
 EOF
@@ -66,16 +66,16 @@ the failure so the next agent does not hit the same problem.
 FAILURE DOCUMENTATION WORKFLOW:
 1. [DIAGNOSE]     Summarize the root cause of the failure in 2-3 sentences.
 
-2. [SAVE]         Call 'create_md_file(...)' to create a new note that captures:
+2. [SAVE]         Call 'create_memory(...)' to create a new memory that captures:
    - What the task was trying to do.
    - What went wrong and why (the root cause).
    - The fix or workaround, if you discovered one.
    - What to try next time if you did NOT discover a fix.
 
-3. [TAG]          Tag the note with 'failure-log' and any relevant technology
+3. [TAG]          Tag the memory with 'failure-log' and any relevant technology
    tags (e.g. 'docker', 'spring-boot', 'mcp'). This makes it findable.
 
-4. [IMPORTANCE]   Call 'set_note_importance(file_id, 8)' so this failure
+4. [IMPORTANCE]   Call 'set_memory_importance(file_id, 8)' so this failure
    analysis is always surfaced early in future searches.
 
 Do not skip this step. Undocumented failures are repeated failures.
