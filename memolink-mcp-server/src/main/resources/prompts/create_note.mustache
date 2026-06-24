@@ -1,10 +1,10 @@
-Create a new note titled "{{title}}".
+Create a new memory titled "{{title}}".
 
 Steps:
-1. Call list_md_files to check whether a note with a similar name already exists.
+1. Call list_memories to check whether a memory with a similar name already exists.
    If one does, ask the user whether to update it instead.
 2. Derive a kebab-case file_id from the title (e.g. "Spring Boot" → "spring-boot.md").
-3. Call create_md_file with:
+3. Call create_memory with:
    - file_id    : the derived kebab-case filename
    - title      : "{{title}}"
 {{#hasBody}}

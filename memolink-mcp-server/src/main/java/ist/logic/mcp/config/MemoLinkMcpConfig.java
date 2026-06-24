@@ -1,6 +1,7 @@
 package ist.logic.mcp.config;
 
 import ist.logic.core.model.KnowledgeGraph;
+import ist.logic.core.service.CrossEncoderService;
 import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphBuilderService;
 import ist.logic.core.service.GraphHolder;
@@ -10,6 +11,7 @@ import ist.logic.core.service.GraphWatchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,13 +25,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 @Configuration
-@EnableConfigurationProperties({NoteTemplateProperties.class, AuthProperties.class, HeadroomProperties.class})
+@EnableConfigurationProperties({NoteTemplateProperties.class, AuthProperties.class, HeadroomProperties.class, RerankProperties.class})
 public class MemoLinkMcpConfig {
 
     private static final Logger log = LoggerFactory.getLogger(MemoLinkMcpConfig.class);
 
-    private static final String MODEL_RESOURCE_BASE = "classpath:models/all-MiniLM-L6-v2/";
-    private static final String MODEL_CACHE_SUBDIR  = ".memolink/models/all-MiniLM-L6-v2";
+    private static final String MODEL_RESOURCE_BASE    = "classpath:models/all-MiniLM-L6-v2/";
+    private static final String MODEL_CACHE_SUBDIR     = ".memolink/models/all-MiniLM-L6-v2";
+    private static final String RERANKER_RESOURCE_BASE = "classpath:models/ms-marco-MiniLM-L6-v2/";
+    private static final String RERANKER_CACHE_SUBDIR  = ".memolink/models/ms-marco-MiniLM-L6-v2";
 
     @Value("${memolink.vault-dir:${user.home}/vault}")
     private String vaultDir;
@@ -43,6 +47,19 @@ public class MemoLinkMcpConfig {
     public EmbeddingService embeddingService(ResourceLoader resourceLoader) {
         Path cacheDir = extractModelToCache(resourceLoader);
         return new EmbeddingService(cacheDir);
+    }
+
+    /**
+     * Cross-encoder reranker bean — only created when
+     * {@code memolink.reranker.enabled=true}.
+     * When the property is false (default) the bean does not exist and
+     * {@link ist.logic.mcp.tools.MemoLinkMcpTools} receives an empty Optional.
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(name = "memolink.reranker.enabled", havingValue = "true")
+    public CrossEncoderService crossEncoderService(ResourceLoader resourceLoader) {
+        Path cacheDir = extractRerankerToCache(resourceLoader);
+        return new CrossEncoderService(cacheDir);
     }
 
     @Bean
@@ -157,4 +174,24 @@ public class MemoLinkMcpConfig {
             log.info("Extracted {} ({} bytes)", target.getFileName(), Files.size(target));
         }
     }
+
+    /**
+     * Copies the cross-encoder model files from the fat-jar classpath into
+     * {@code ~/.memolink/models/ms-marco-MiniLM-L6-v2/}.
+     * Skips files that already exist (no re-copy on subsequent restarts).
+     */
+    private Path extractRerankerToCache(ResourceLoader resourceLoader) {
+        Path cacheDir = Path.of(System.getProperty("user.home")).resolve(RERANKER_CACHE_SUBDIR);
+        try {
+            Files.createDirectories(cacheDir);
+            copyIfAbsent(resourceLoader, RERANKER_RESOURCE_BASE + "model.onnx",     cacheDir.resolve("model.onnx"));
+            copyIfAbsent(resourceLoader, RERANKER_RESOURCE_BASE + "tokenizer.json", cacheDir.resolve("tokenizer.json"));
+            log.info("Cross-encoder reranker model ready at: {}", cacheDir);
+            return cacheDir;
+        } catch (IOException e) {
+            log.warn("Could not extract reranker model — reranking disabled. Cause: {}", e.getMessage());
+            return null;
+        }
+    }
 }
+

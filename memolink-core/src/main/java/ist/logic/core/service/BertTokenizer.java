@@ -67,6 +67,63 @@ public final class BertTokenizer implements Closeable {
         return new long[][]{ inputIds, attentionMask, tokenTypeIds };
     }
 
+    /**
+     * Encodes a sentence pair for cross-encoder models.
+     * Produces: {@code [CLS] queryTokens [SEP] passageTokens [SEP]}
+     * with {@code token_type_ids} = 0 for query segment, 1 for passage segment.
+     *
+     * @param query   the search query
+     * @param passage the candidate passage to score against the query
+     * @param maxLen  total sequence length including special tokens
+     * @return {@code [input_ids, attention_mask, token_type_ids]}
+     */
+    public long[][] encodePair(String query, String passage, int maxLen) {
+        List<Integer> queryIds   = tokenize(query   == null ? "" : query);
+        List<Integer> passageIds = tokenize(passage == null ? "" : passage);
+
+        // Budget: [CLS] + queryIds + [SEP] + passageIds + [SEP]
+        // Reserve 3 positions for the special tokens
+        int budget = maxLen - 3;
+        // Allocate up to half the budget to query, rest to passage
+        int qMax = Math.min(queryIds.size(),   budget / 2);
+        int pMax = Math.min(passageIds.size(), budget - qMax);
+        queryIds   = queryIds.subList(0, qMax);
+        passageIds = passageIds.subList(0, pMax);
+
+        long[] inputIds      = new long[maxLen];
+        long[] attentionMask = new long[maxLen];
+        long[] tokenTypeIds  = new long[maxLen];
+
+        int pos = 0;
+
+        // [CLS] — token type 0
+        inputIds[pos] = CLS_ID;  attentionMask[pos] = 1L;  pos++;
+
+        // Query tokens — token type 0
+        for (int id : queryIds) {
+            inputIds[pos] = id;  attentionMask[pos] = 1L;  pos++;
+        }
+
+        // [SEP] — token type 0
+        inputIds[pos] = SEP_ID;  attentionMask[pos] = 1L;  pos++;
+
+        // Passage tokens — token type 1
+        for (int id : passageIds) {
+            inputIds[pos]     = id;
+            attentionMask[pos] = 1L;
+            tokenTypeIds[pos]  = 1L;
+            pos++;
+        }
+
+        // [SEP] — token type 1
+        inputIds[pos]     = SEP_ID;
+        attentionMask[pos] = 1L;
+        tokenTypeIds[pos]  = 1L;
+        // remaining positions stay PAD / 0
+
+        return new long[][]{ inputIds, attentionMask, tokenTypeIds };
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private List<Integer> tokenize(String text) {

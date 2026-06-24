@@ -8,7 +8,11 @@
 #        │  Streamable HTTP  → localhost:8765
 #        ▼
 #   ┌─────────────────────────────┐
-#   │  memolink-mcp-server :8765  │  Java · Spring Boot / Undertow
+#   │  memolink-mcp-server :8765  │  Java · Spring Boot / Tomcat
+#   │  ┌───────────────────────┐  │
+#   │  │ Stage 1: BM25 + KNN  │  │  hybridSearch → top-N candidates
+#   │  │ Stage 2: cross-encoder│  │  rerank → top-K (when enabled)
+#   │  └───────────────────────┘  │
 #   │  (HeadroomCompressionService│
 #   │   compresses tool outputs)  │
 #   └──────────────┬──────────────┘
@@ -20,14 +24,24 @@
 #                  │
 #           shared vault volume
 #
+# Profiles:
+#   (default)      memolink only — stdio or HTTP, no compression, no reranker
+#   compression    adds headroom sidecar
+#   reranker       enables cross-encoder reranking inside the memolink JVM
+#                  (no extra container — the model runs inside the Java process)
+#
 # Quick start:
 #   cp .env.example .env   # edit VAULT_DIR and API keys
 #   docker compose up --build
+#
+# With headroom + reranker:
+#   docker compose --profile compression --profile reranker up --build
 #
 # LLM client config (VS Code mcp.json):
 #   { "memolink": { "type": "http", "url": "http://localhost:8765/mcp",
 #                   "headers": { "X-API-Key": "sk-vscode-changeme" } } }
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 services:
 
@@ -94,6 +108,15 @@ services:
       MEMOLINK_KEY_VSCODE: ${MEMOLINK_KEY_VSCODE:-sk-vscode-changeme}
       MEMOLINK_KEY_CLAUDE: ${MEMOLINK_KEY_CLAUDE:-sk-claude-changeme}
       MEMOLINK_KEY_CI:     ${MEMOLINK_KEY_CI:-sk-ci-changeme}
+
+      # ── Cross-encoder reranker ────────────────────────────────────────────
+      # Set MEMOLINK_RERANKER_ENABLED=true (or use --profile reranker) to
+      # enable two-stage retrieval: BM25+KNN → cross-encoder rerank.
+      # Adds ~100-300ms latency per search. No extra container needed —
+      # the 87MB ONNX model runs inside the memolink JVM.
+      MEMOLINK_RERANKER_ENABLED:            ${MEMOLINK_RERANKER_ENABLED:-false}
+      MEMOLINK_RERANKER_CANDIDATE_MULTIPLE: ${MEMOLINK_RERANKER_CANDIDATE_MULTIPLE:-4}
+      MEMOLINK_RERANKER_MAX_CANDIDATES:     ${MEMOLINK_RERANKER_MAX_CANDIDATES:-20}
     
     # Keep stdin open so the Spring AI STDIO transport doesn't detect EOF and shut down the JVM
     stdin_open: true
@@ -105,6 +128,9 @@ services:
       # Bind-mount your vault directory.  Set VAULT_DIR in .env or inline:
       #   VAULT_DIR=/Users/you/obsidian-vault docker compose up
       - ${VAULT_DIR:-./vault}:/vault:rw
+      # Persist extracted ONNX model caches across container restarts
+      # (avoids re-extracting 86MB bi-encoder + 87MB cross-encoder on every start)
+      - memolink-models:/root/.memolink/models
     depends_on:
       headroom:
         condition: service_healthy     # wait until kompress model is fully loaded
@@ -113,4 +139,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g                   # hard ceiling — JVM heap (768m) + off-heap overhead
+          # JVM heap (1g) + off-heap overhead:
+          #   Lucene buffers, bi-encoder ONNX (~86MB native), cross-encoder (~87MB native)
+          # Raise to 1.5g when reranker is enabled alongside headroom.
+          memory: ${MEMOLINK_MEMORY_LIMIT:-1.2g}
+
+volumes:
+  memolink-models:   # named volume — ONNX models survive container restarts

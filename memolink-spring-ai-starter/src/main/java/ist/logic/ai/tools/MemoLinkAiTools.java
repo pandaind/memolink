@@ -4,6 +4,7 @@ import ist.logic.core.model.GraphContextResult;
 import ist.logic.core.model.MdFileMetadata;
 import ist.logic.core.model.NoteDetail;
 import ist.logic.core.model.SearchResult;
+import ist.logic.core.service.CrossEncoderService;
 import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphSearchService.ChunkSearchResult;
@@ -51,15 +52,18 @@ public class MemoLinkAiTools {
     private final GraphHolder           holder;
     private final GraphTraversalService traversalService;
     private final EmbeddingService      embeddingService;
+    private final CrossEncoderService   reranker;  // null when disabled
     private final Path                  vaultDir;
 
     public MemoLinkAiTools(GraphHolder holder,
                            GraphTraversalService traversalService,
                            EmbeddingService embeddingService,
+                           CrossEncoderService reranker,
                            Path vaultDir) {
         this.holder           = holder;
         this.traversalService = traversalService;
         this.embeddingService = embeddingService;
+        this.reranker         = reranker;
         this.vaultDir         = vaultDir;
     }
 
@@ -74,7 +78,7 @@ public class MemoLinkAiTools {
     public List<SearchResult> search_memories(String query) {
         try {
             return holder.getSearchService().hybridSearch(
-                    query, embeddingService, 10, holder.getGraph()::getMdFile);
+                    query, embeddingService, 10, holder.getGraph()::getMdFile, reranker);
         } catch (IOException e) {
             log.warn("search_memories failed: {}", e.getMessage());
             return List.of();
@@ -112,7 +116,14 @@ public class MemoLinkAiTools {
 
         List<ChunkSearchResult> hits;
         try {
-            hits = holder.getSearchService().searchChunks(qEmb, 5);
+            hits = holder.getSearchService().searchChunks(
+                    qEmb, 5, query, reranker,
+                    hit -> {
+                        MdFileMetadata m = holder.getGraph().getMdFile(hit.fileId());
+                        if (m == null || m.getChunkTexts() == null) return "";
+                        if (hit.chunkIndex() >= m.getChunkTexts().size()) return "";
+                        return m.getChunkTexts().get(hit.chunkIndex());
+                    });
         } catch (IOException e) {
             log.warn("ask_vault search failed: {}", e.getMessage());
             return List.of();

@@ -36,6 +36,17 @@ memolink:
     enabled: false
     words: a,an,and,are,as,at,be,but,by,for,if,in,into,is,it,no,not,of,on,or,such,that,the,their,then,there,these,they,this,to,was,will,with
 
+  # ── Cross-Encoder Reranker ────────────────────────────────────────────────
+  # When enabled, a second-pass cross-encoder reranks the Stage-1 BM25+KNN
+  # candidates before returning results to the LLM.
+  # Improves precision of search_memories and ask_vault at the cost of ~100-300ms
+  # extra latency (cross-encoder/ms-marco-MiniLM-L-6-v2, 87MB ONNX).
+  # Model is extracted to ~/.memolink/models/ms-marco-MiniLM-L6-v2/ on first start.
+  reranker:
+    enabled:            ${MEMOLINK_RERANKER_ENABLED:false}
+    candidate-multiple: ${MEMOLINK_RERANKER_CANDIDATE_MULTIPLE:4}
+    max-candidates:     ${MEMOLINK_RERANKER_MAX_CANDIDATES:20}
+
 spring:
   application:
     name: memolink-mcp-server

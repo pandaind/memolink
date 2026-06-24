@@ -1,10 +1,10 @@
 Find the connection path between "{{fromId}}" and "{{toId}}" in the knowledge graph.
 
 Steps:
-1. Call find_path_between_notes with from_id="{{fromId}}" and to_id="{{toId}}".
-2. If a path is found, call get_md_file for each node on the path to understand
+1. Call find_path with from_id="{{fromId}}" and to_id="{{toId}}".
+2. If a path is found, call read_memory for each node on the path to understand
    each intermediate topic.
 3. Narrate the conceptual journey: how does "{{fromId}}" connect to "{{toId}}"
-   through the intermediate notes? What does each hop represent?
-4. If no direct path exists, call get_related_md_files on both endpoints
-   and suggest the closest bridging notes.
+   through the intermediate memories? What does each hop represent?
+4. If no direct path exists, call get_related_memories on both endpoints
+   and suggest the closest bridging memories.

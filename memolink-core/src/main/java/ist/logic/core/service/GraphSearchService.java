@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Lucene-backed search engine with three modes:
@@ -168,11 +169,41 @@ public class GraphSearchService implements Closeable {
         return scoreDocs(topDocs, searcher, doc -> new SearchResult(doc.get("id"), doc.get("title"), 0));
     }
 
-    /** Chunk-level KNN search used by {@code ask_vault}. */
+    /**
+     * Chunk-level KNN search used by {@code ask_vault}.
+     * Results are returned in KNN cosine-similarity order.
+     */
     public List<ChunkSearchResult> searchChunks(float[] queryEmbedding, int maxResults) throws IOException {
+        return searchChunks(queryEmbedding, maxResults, null, null, null);
+    }
+
+    /**
+     * Chunk-level KNN search with optional cross-encoder reranking.
+     *
+     * <p>When {@code reranker} is non-null and available, retrieves
+     * {@code maxResults * candidateMultiple} initial candidates via KNN and
+     * reranks them with the cross-encoder, returning the top {@code maxResults}.
+     *
+     * @param queryEmbedding   KNN query vector
+     * @param maxResults       number of final results to return
+     * @param originalQuery    plain-text query used for cross-encoder scoring (null = skip rerank)
+     * @param reranker         optional cross-encoder service; null = KNN order kept
+     * @param chunkTextSupplier maps a ChunkSearchResult to its passage text for scoring
+     */
+    public List<ChunkSearchResult> searchChunks(float[] queryEmbedding,
+                                                 int maxResults,
+                                                 String originalQuery,
+                                                 CrossEncoderService reranker,
+                                                 Function<ChunkSearchResult, String> chunkTextSupplier)
+            throws IOException {
         if (chunkReader == null || queryEmbedding == null) return Collections.emptyList();
-        Query knnQuery = new KnnFloatVectorQuery("embedding", queryEmbedding, maxResults);
-        TopDocs topDocs = chunkSearcher.search(knnQuery, maxResults);
+
+        boolean doRerank = reranker != null && reranker.isAvailable()
+                           && originalQuery != null && chunkTextSupplier != null;
+        int fetchCount = doRerank ? maxResults * 4 : maxResults;
+
+        Query knnQuery = new KnnFloatVectorQuery("embedding", queryEmbedding, fetchCount);
+        TopDocs topDocs = chunkSearcher.search(knnQuery, fetchCount);
         List<ChunkSearchResult> results = new ArrayList<>(topDocs.scoreDocs.length);
         for (ScoreDoc sd : topDocs.scoreDocs) {
             Document doc = chunkSearcher.storedFields().document(sd.doc);
@@ -180,6 +211,10 @@ public class GraphSearchService implements Closeable {
                     doc.get("fileId"),
                     doc.getField("chunkIndex").numericValue().intValue(),
                     sd.score));
+        }
+
+        if (doRerank) {
+            results = reranker.rerank(originalQuery, results, chunkTextSupplier, maxResults);
         }
         return results;
     }
@@ -192,23 +227,50 @@ public class GraphSearchService implements Closeable {
      * Pass a {@code metadataLookup} to enable importance/recency boosting, or
      * {@code null} to skip it.
      */
+    /** Hybrid search without metadata boosting and without reranking. */
     public List<SearchResult> hybridSearch(String query, EmbeddingService embeddingService,
                                            int maxResults) throws IOException {
-        return hybridSearch(query, embeddingService, maxResults, null);
+        return hybridSearch(query, embeddingService, maxResults, null, null);
     }
 
+    /** Hybrid search with metadata boosting but without reranking. */
     public List<SearchResult> hybridSearch(String query,
                                            EmbeddingService embeddingService,
                                            int maxResults,
                                            Function<String, MdFileMetadata> metadataLookup)
             throws IOException {
+        return hybridSearch(query, embeddingService, maxResults, metadataLookup, null);
+    }
+
+    /**
+     * Full hybrid search with optional metadata boosting AND optional cross-encoder reranking.
+     *
+     * <p>When {@code reranker} is non-null and available:
+     * <ol>
+     *   <li>Retrieves {@code maxResults * 4} candidates via BM25+KNN+metadata fusion.</li>
+     *   <li>Re-scores each candidate as {@code (query, title + body)} via the cross-encoder.</li>
+     *   <li>Returns the top {@code maxResults} reranked results.</li>
+     * </ol>
+     *
+     * @param reranker      optional cross-encoder; null means heuristic fusion order is kept
+     * @param bodyLookup    supplies passage text for reranking; ignored when reranker is null
+     */
+    public List<SearchResult> hybridSearch(String query,
+                                           EmbeddingService embeddingService,
+                                           int maxResults,
+                                           Function<String, MdFileMetadata> metadataLookup,
+                                           CrossEncoderService reranker)
+            throws IOException {
         if (!isReady() || isBlank(query)) return Collections.emptyList();
 
-        List<SearchResult> keyword  = searchWithScores(query, maxResults * 2);
+        boolean doRerank = reranker != null && reranker.isAvailable();
+        int fetchCount = doRerank ? maxResults * 4 : maxResults;
+
+        List<SearchResult> keyword  = searchWithScores(query, fetchCount * 2);
         List<SearchResult> semantic = Collections.emptyList();
         if (embeddingService != null && embeddingService.isAvailable()) {
             float[] qEmb = embeddingService.embed(query);
-            if (qEmb != null) semantic = semanticSearch(qEmb, maxResults * 2);
+            if (qEmb != null) semantic = semanticSearch(qEmb, fetchCount * 2);
         }
 
         Map<String, Float>  scores = new LinkedHashMap<>();
@@ -231,11 +293,23 @@ public class GraphSearchService implements Closeable {
             applyMetadataBoost(scores, metadataLookup);
         }
 
-        return scores.entrySet().stream()
+        List<SearchResult> fused = scores.entrySet().stream()
                 .sorted(Map.Entry.<String, Float>comparingByValue().reversed())
-                .limit(maxResults)
+                .limit(fetchCount)
                 .map(e -> new SearchResult(e.getKey(), titles.getOrDefault(e.getKey(), e.getKey()), e.getValue()))
                 .toList();
+
+        if (doRerank && metadataLookup != null) {
+            return reranker.rerank(query, fused,
+                    r -> {
+                        MdFileMetadata m = metadataLookup.apply(r.id());
+                        return m == null ? r.title()
+                                : r.title() + " " + m.getContent().substring(
+                                        0, Math.min(m.getContent().length(), 512));
+                    },
+                    maxResults);
+        }
+        return fused.size() <= maxResults ? fused : fused.subList(0, maxResults);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────

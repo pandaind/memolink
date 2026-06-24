@@ -1,11 +1,13 @@
-Search the knowledge graph for notes about: {{query}}
+Search the vault for memories about: {{query}}
 
-1. Call search_md_files with query="{{query}}".
-2. For each result with score ≥ 0.5, call get_md_file to read its content.
-3. Call get_related_md_files on the top result to surface connected notes.
-4. Summarise your findings and suggest next notes to explore.
+1. Call ask_vault with query="{{query}}" first — this returns the most relevant paragraphs
+   directly, scored by semantic similarity. Discard excerpts with score < 0.4.
+2. If ask_vault results are thin, call search_memories with query="{{query}}" to find
+   the best matching full memories by title.
+3. For the top result, call get_memory_context to get its full body and 1-hop neighbours.
+4. Summarise your findings and suggest related memories to explore.
 {{#hasMetadataFields}}
-When reading notes, pay attention to the following frontmatter metadata fields:
+When reading memories, pay attention to the following frontmatter metadata fields:
 {{#metadataFields}}
 - **{{name}}**: {{description}}
 {{/metadataFields}}

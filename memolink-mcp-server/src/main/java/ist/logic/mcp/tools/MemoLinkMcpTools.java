@@ -4,6 +4,7 @@ import ist.logic.core.model.GraphContextResult;
 import ist.logic.core.model.MdFileMetadata;
 import ist.logic.core.model.NoteDetail;
 import ist.logic.core.model.SearchResult;
+import ist.logic.core.service.CrossEncoderService;
 import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphHolder;
 import ist.logic.core.service.GraphSearchService.ChunkSearchResult;
@@ -28,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -59,13 +61,14 @@ public class MemoLinkMcpTools {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final GraphHolder               holder;
-    private final GraphTraversalService     traversalService;
-    private final Path                      vaultDir;
-    private final NoteTemplateService       noteTemplateService;
-    private final EmbeddingService          embeddingService;
+    private final GraphHolder                holder;
+    private final GraphTraversalService      traversalService;
+    private final Path                       vaultDir;
+    private final NoteTemplateService        noteTemplateService;
+    private final EmbeddingService           embeddingService;
     private final HeadroomCompressionService headroomService;
-    private final StopWordFilterService     stopWordFilterService;
+    private final StopWordFilterService      stopWordFilterService;
+    private final CrossEncoderService        reranker;  // null when disabled
 
     public MemoLinkMcpTools(GraphHolder holder,
                            GraphTraversalService traversalService,
@@ -73,7 +76,8 @@ public class MemoLinkMcpTools {
                            NoteTemplateService noteTemplateService,
                            EmbeddingService embeddingService,
                            HeadroomCompressionService headroomService,
-                           StopWordFilterService stopWordFilterService) {
+                           StopWordFilterService stopWordFilterService,
+                           Optional<CrossEncoderService> reranker) {
         this.holder               = holder;
         this.traversalService     = traversalService;
         this.vaultDir             = mdGraphVaultDir;
@@ -81,13 +85,14 @@ public class MemoLinkMcpTools {
         this.embeddingService     = embeddingService;
         this.headroomService      = headroomService;
         this.stopWordFilterService = stopWordFilterService;
+        this.reranker             = reranker.orElse(null);
     }
 
     @Tool(description = "Search memories by keyword and semantic similarity. Returns matching note IDs, titles, and scores.")
     public String search_memories(String query) {
         try {
             return formatSearchResults(holder.getSearchService().hybridSearch(
-                    query, embeddingService, 10, holder.getGraph()::getMdFile));
+                    query, embeddingService, 10, holder.getGraph()::getMdFile, reranker));
         } catch (IOException e) {
             return toJson(Map.of("error", "Error searching notes: " + e.getMessage()));
         }
@@ -396,7 +401,14 @@ public class MemoLinkMcpTools {
 
         List<ChunkSearchResult> hits;
         try {
-            hits = holder.getSearchService().searchChunks(queryVector, 5);
+            hits = holder.getSearchService().searchChunks(
+                    queryVector, 5, query, reranker,
+                    hit -> {
+                        MdFileMetadata m = holder.getGraph().getMdFile(hit.fileId());
+                        if (m == null || m.getChunkTexts() == null) return "";
+                        if (hit.chunkIndex() >= m.getChunkTexts().size()) return "";
+                        return m.getChunkTexts().get(hit.chunkIndex());
+                    });
         } catch (IOException e) {
             return "{\"error\": \"Search failed: " + e.getMessage() + "\"}";
         }

@@ -2,6 +2,7 @@ package ist.logic.ai;
 
 import ist.logic.ai.tools.MemoLinkAiTools;
 import ist.logic.core.model.KnowledgeGraph;
+import ist.logic.core.service.CrossEncoderService;
 import ist.logic.core.service.EmbeddingService;
 import ist.logic.core.service.GraphBuilderService;
 import ist.logic.core.service.GraphHolder;
@@ -14,9 +15,11 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ResourceLoader;
+import java.util.Optional;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,8 +45,10 @@ public class MemoLinkAiAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(MemoLinkAiAutoConfiguration.class);
 
-    private static final String MODEL_RESOURCE_BASE = "classpath:models/all-MiniLM-L6-v2/";
-    private static final String MODEL_CACHE_SUBDIR  = ".memolink/models/all-MiniLM-L6-v2";
+    private static final String MODEL_RESOURCE_BASE    = "classpath:models/all-MiniLM-L6-v2/";
+    private static final String MODEL_CACHE_SUBDIR     = ".memolink/models/all-MiniLM-L6-v2";
+    private static final String RERANKER_RESOURCE_BASE = "classpath:models/ms-marco-MiniLM-L6-v2/";
+    private static final String RERANKER_CACHE_SUBDIR  = ".memolink/models/ms-marco-MiniLM-L6-v2";
 
     // ── Beans ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +64,20 @@ public class MemoLinkAiAutoConfiguration {
     public EmbeddingService memoLinkAiEmbeddingService(ResourceLoader resourceLoader) {
         Path cacheDir = extractModelToCache(resourceLoader);
         return new EmbeddingService(cacheDir);
+    }
+
+    /**
+     * Cross-encoder reranker bean — only created when
+     * {@code memolink.reranker.enabled=true}.
+     * When the property is false (default) the bean does not exist and
+     * {@link MemoLinkAiTools} receives an empty Optional.
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(name = "memolink.reranker.enabled", havingValue = "true")
+    public CrossEncoderService memoLinkAiCrossEncoderService(ResourceLoader resourceLoader) {
+        Path cacheDir = extractRerankerToCache(resourceLoader);
+        return new CrossEncoderService(cacheDir);
     }
 
     @Bean
@@ -129,9 +148,10 @@ public class MemoLinkAiAutoConfiguration {
     public MemoLinkAiTools memoLinkAiTools(GraphHolder holder,
                                            GraphTraversalService traversalService,
                                            EmbeddingService embeddingService,
+                                           Optional<CrossEncoderService> reranker,
                                            MemoLinkAiProperties props) {
         return new MemoLinkAiTools(holder, traversalService, embeddingService,
-                vaultRootDir(props));
+                reranker.orElse(null), vaultRootDir(props));
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -181,6 +201,22 @@ public class MemoLinkAiAutoConfiguration {
         try (InputStream in = resource.getInputStream()) {
             Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
             log.info("Extracted {} ({} bytes)", target.getFileName(), Files.size(target));
+        }
+    }
+
+    private Path extractRerankerToCache(ResourceLoader resourceLoader) {
+        Path cacheDir = Path.of(System.getProperty("user.home")).resolve(RERANKER_CACHE_SUBDIR);
+        try {
+            Files.createDirectories(cacheDir);
+            copyIfAbsent(resourceLoader, RERANKER_RESOURCE_BASE + "model.onnx",
+                    cacheDir.resolve("model.onnx"));
+            copyIfAbsent(resourceLoader, RERANKER_RESOURCE_BASE + "tokenizer.json",
+                    cacheDir.resolve("tokenizer.json"));
+            log.info("Cross-encoder reranker model ready at: {}", cacheDir);
+            return cacheDir;
+        } catch (IOException e) {
+            log.warn("Could not extract reranker model — reranking disabled. Cause: {}", e.getMessage());
+            return null;
         }
     }
 }

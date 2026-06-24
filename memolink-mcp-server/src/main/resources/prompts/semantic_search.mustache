@@ -1,16 +1,18 @@
-Search the knowledge graph semantically for: {{query}}
+Search the vault semantically for: {{query}}
 
-This uses vector embeddings — it finds conceptually related notes even without exact keyword matches.
+This uses vector embeddings — it finds conceptually related memories even without exact keyword matches.
 
 Steps:
-1. Call semantic_search with query="{{query}}" for embedding-based results.
-2. Also call search_md_files with query="{{query}}" for keyword-based results.
-3. Merge the two result sets, preferring notes that appear in both.
-4. For the top 3 results, call get_graph_context to retrieve each note's
+1. Call ask_vault with query="{{query}}" for chunk-level semantic results.
+   Each excerpt includes a score — discard anything below 0.4.
+2. Call semantic_search with query="{{query}}" for full-memory vector ranking.
+3. Call search_memories with query="{{query}}" for keyword (BM25) results.
+4. Merge the result sets, preferring memories that appear in multiple result lists.
+5. For the top 1–2 results, call get_memory_context to retrieve each memory's
    content AND its 1-hop neighbours with relationship types.
-5. Summarise the findings, highlighting how the notes relate to each other.
+6. Summarise the findings, highlighting how the memories relate to each other.
 {{#hasMetadataFields}}
-When reading notes, pay attention to the following frontmatter metadata fields:
+When reading memories, pay attention to the following frontmatter metadata fields:
 {{#metadataFields}}
 - **{{name}}**: {{description}}
 {{/metadataFields}}

@@ -1,19 +1,20 @@
-Gather source notes about "{{topic}}" and synthesise a reflection/summary node.
+Gather source memories about "{{topic}}" and synthesise a reflection/summary memory.
 
 Steps:
-1. Call gather_reflection_sources with topic="{{topic}}" and max_sources={{#maxSources}}{{maxSources}}{{/maxSources}}{{^maxSources}}5{{/maxSources}}.
+1. Call gather_sources with topic="{{topic}}" and max_sources={{#maxSources}}{{maxSources}}{{/maxSources}}{{^maxSources}}5{{/maxSources}}.
 2. Read the returned source excerpts carefully.
-3. Call create_md_file with:
+3. Call create_memory with:
    - file_id    : "{{topic}}-reflection.md" (normalised to kebab-case)
    - title      : "{{topic}} — Summary"
    - body       : A synthesised prose summary covering:
-     * Core concepts shared across the source notes
+     * Core concepts shared across the source memories
      * Key relationships and patterns
      * Gaps or open questions
    - tags       : ["reflection", "summary"] plus any topic-specific tags
-   - wiki_links : all source note IDs returned by step 1
+   - wiki_links : all source memory IDs returned by step 1
    - metadata   : {"importance": "7"}
-4. Confirm the created reflection note ID.
+4. Call set_memory_importance with file_id from step 3 and importance=7.
+5. Confirm the created reflection memory ID.
 {{#hasMetadataFields}}
 Apply these additional metadata fields if relevant:
 {{#metadataFields}}
