@@ -214,7 +214,9 @@ public class GraphSearchService implements Closeable {
         }
 
         if (doRerank) {
-            results = reranker.rerank(originalQuery, results, chunkTextSupplier, maxResults);
+            results = reranker.rerank(originalQuery, results, chunkTextSupplier,
+                    (c, s) -> new ChunkSearchResult(c.fileId(), c.chunkIndex(), s),
+                    maxResults);
         }
         return results;
     }
@@ -307,6 +309,7 @@ public class GraphSearchService implements Closeable {
                                 : r.title() + " " + m.getContent().substring(
                                         0, Math.min(m.getContent().length(), 512));
                     },
+                    (r, s) -> new SearchResult(r.id(), r.title(), s),
                     maxResults);
         }
         return fused.size() <= maxResults ? fused : fused.subList(0, maxResults);

@@ -143,12 +143,14 @@ public class CrossEncoderService implements Closeable {
      * @param query         the user's search query
      * @param candidates    candidate items from Stage 1 retrieval
      * @param textExtractor extracts the passage text to score from each candidate
+     * @param scoreUpdater  updates the candidate's score with the new logit score
      * @param topK          number of results to return after reranking
      * @param <T>           candidate type
      */
     public <T> List<T> rerank(String query,
                                List<T> candidates,
                                Function<T, String> textExtractor,
+                               java.util.function.BiFunction<T, Float, T> scoreUpdater,
                                int topK) {
         if (!available.get() || candidates.isEmpty()) {
             return candidates.size() <= topK ? candidates
@@ -161,7 +163,7 @@ public class CrossEncoderService implements Closeable {
         for (T candidate : candidates) {
             String text  = textExtractor.apply(candidate);
             float  s     = score(query, text == null ? "" : text);
-            scored.add(new Scored<>(candidate, s));
+            scored.add(new Scored<>(scoreUpdater.apply(candidate, s), s));
         }
 
         return scored.stream()
