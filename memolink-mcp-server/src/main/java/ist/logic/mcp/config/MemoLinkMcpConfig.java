@@ -30,8 +30,8 @@ public class MemoLinkMcpConfig {
 
     private static final Logger log = LoggerFactory.getLogger(MemoLinkMcpConfig.class);
 
-    private static final String MODEL_RESOURCE_BASE    = "classpath:models/all-MiniLM-L6-v2/";
-    private static final String MODEL_CACHE_SUBDIR     = ".memolink/models/all-MiniLM-L6-v2";
+    private static final String MODEL_RESOURCE_BASE    = "classpath:models/bge-small-en-v1.5/";
+    private static final String MODEL_CACHE_SUBDIR     = ".memolink/models/bge-small-en-v1.5";
     private static final String RERANKER_RESOURCE_BASE = "classpath:models/ms-marco-MiniLM-L6-v2/";
     private static final String RERANKER_CACHE_SUBDIR  = ".memolink/models/ms-marco-MiniLM-L6-v2";
 
