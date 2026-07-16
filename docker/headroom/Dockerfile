@@ -42,6 +42,7 @@ COPY server.py  .
 #   docker build --build-arg KOMPRESS_MODEL_ID=chopratejas/kompress-base .
 ARG KOMPRESS_MODEL_ID=chopratejas/kompress-small
 ENV KOMPRESS_MODEL_ID=${KOMPRESS_MODEL_ID}
+ENV HF_ENDPOINT="https://hf-mirror.com"
 
 # HuggingFace cache goes into /root/.cache/huggingface (persisted in image layer)
 RUN python prewarm.py

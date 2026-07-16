@@ -55,13 +55,16 @@ services:
       args:
         KOMPRESS_MODEL_ID: ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
     environment:
-      KOMPRESS_MODEL_ID:   ${KOMPRESS_MODEL_ID:-chopratejas/kompress-small}
+      KOMPRESS_MODEL_ID:   ${KOMPRESS_MODEL_ID:-/models/kompress-small}
       KOMPRESS_THRESHOLD:  ${KOMPRESS_THRESHOLD:-0.5}
       KOMPRESS_CHUNK_WORDS: ${KOMPRESS_CHUNK_WORDS:-350}
       HEADROOM_KOMPRESS_BACKEND: pytorch
       # Limit ONNX internal thread pools to avoid CPU contention in containers
       HEADROOM_KOMPRESS_ONNX_INTRA_THREADS: "2"
       HEADROOM_KOMPRESS_ONNX_INTER_THREADS: "1"
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - ./models/hub/hub:/root/.cache/huggingface/hub
     ports:
       # Expose on host for debugging/testing — remove in production
       - "${HEADROOM_HOST_PORT:-8787}:8787"
@@ -146,3 +149,4 @@ services:
 
 volumes:
   memolink-models:   # named volume — ONNX models survive container restarts
+  headroom-models:   # named volume — Kompress PyTorch models survive restarts

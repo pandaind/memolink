@@ -33,3 +33,4 @@ venv/
 .Trashes
 ehthumbs.db
 Thumbs.db
+models/
